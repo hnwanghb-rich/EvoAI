@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="120" viewBox="0 0 1600 120">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C0403B;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#D46864;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E8824A;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#F5DEB3"/>
+      <stop offset="100%" style="stop-color:#DAA520"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="120" fill="url(#bg)" rx="2"/>
+  <text x="800" y="48" text-anchor="middle" font-family="STKaiti,KaiTi,serif" font-size="36" fill="#FFF8F0" letter-spacing="8">合群汽车集团 · AI + 业务能力知识库</text>
+  <text x="800" y="90" text-anchor="middle" font-family="STKaiti,KaiTi,serif" font-size="20" fill="rgba(255,248,240,0.7)" letter-spacing="6">数字化经验沉淀 · 全员能力提升 · 知识驱动飞轮</text>
+</svg>

@@ -1,0 +1,146 @@
+/* 宋式美学 8 套皮肤 CSS 变量 */
+
+/* ========================================
+   皮肤1：朱砂红 · Vermilion（默认）
+   ======================================== */
+:root,
+body[data-skin="1"] {
+  --primary: #C0403B;
+  --primary-light: #D46864;
+  --bg-main: #FEF9F6;
+  --bg-card: #FFF5F0;
+  --text-main: #3D2B28;
+  --text-sub: #8B6E67;
+  --border: #E8D0C8;
+  --shadow: rgba(192, 64, 59, 0.12);
+  --accent: #E8824A;
+  --success: #7BA668;
+  --danger: #C0403B;
+  --banner-bg: linear-gradient(135deg, #C0403B 0%, #D46864 50%, #E8824A 100%);
+}
+
+/* ========================================
+   皮肤2：琥珀金 · Amber Gold
+   ======================================== */
+body[data-skin="2"] {
+  --primary: #B8860B;
+  --primary-light: #D4A843;
+  --bg-main: #FDFAF3;
+  --bg-card: #FFF9E6;
+  --text-main: #3D3528;
+  --text-sub: #8B7D5E;
+  --border: #E0D5B8;
+  --shadow: rgba(184, 134, 11, 0.12);
+  --accent: #CD853F;
+  --success: #6B8E5A;
+  --danger: #B8860B;
+  --banner-bg: linear-gradient(135deg, #B8860B 0%, #D4A843 50%, #CD853F 100%);
+}
+
+/* ========================================
+   皮肤3：檀木棕 · Sandalwood
+   ======================================== */
+body[data-skin="3"] {
+  --primary: #8B5E3C;
+  --primary-light: #A67B5B;
+  --bg-main: #FBF6F0;
+  --bg-card: #F5EDE3;
+  --text-main: #3D2E24;
+  --text-sub: #8B7355;
+  --border: #D4C4B0;
+  --shadow: rgba(139, 94, 60, 0.12);
+  --accent: #C67B4B;
+  --success: #739B5E;
+  --danger: #8B5E3C;
+  --banner-bg: linear-gradient(135deg, #8B5E3C 0%, #A67B5B 50%, #C67B4B 100%);
+}
+
+/* ========================================
+   皮肤4：汝窑青 · Ru Kiln Celadon
+   ======================================== */
+body[data-skin="4"] {
+  --primary: #6B8E7B;
+  --primary-light: #8FAD9C;
+  --bg-main: #F5F9F6;
+  --bg-card: #EEF5F0;
+  --text-main: #2D3A32;
+  --text-sub: #6B8072;
+  --border: #C8DCD0;
+  --shadow: rgba(107, 142, 123, 0.12);
+  --accent: #5B8C7A;
+  --success: #6A9B71;
+  --danger: #C9705E;
+  --banner-bg: linear-gradient(135deg, #6B8E7B 0%, #8FAD9C 50%, #5B8C7A 100%);
+}
+
+/* ========================================
+   皮肤5：霁蓝釉 · Sacrificial Blue
+   ======================================== */
+body[data-skin="5"] {
+  --primary: #4A688B;
+  --primary-light: #6885A6;
+  --bg-main: #F5F7FB;
+  --bg-card: #EDF1F8;
+  --text-main: #2A3240;
+  --text-sub: #6B7890;
+  --border: #C8D4E4;
+  --shadow: rgba(74, 104, 139, 0.12);
+  --accent: #5B7EA8;
+  --success: #6B9B7A;
+  --danger: #C9695D;
+  --banner-bg: linear-gradient(135deg, #4A688B 0%, #6885A6 50%, #5B7EA8 100%);
+}
+
+/* ========================================
+   皮肤6：水墨灰 · Ink Wash Gray
+   ======================================== */
+body[data-skin="6"] {
+  --primary: #6B7B8B;
+  --primary-light: #8E9CAA;
+  --bg-main: #F6F7F8;
+  --bg-card: #EEF0F3;
+  --text-main: #303840;
+  --text-sub: #7B8490;
+  --border: #D0D4D8;
+  --shadow: rgba(107, 123, 139, 0.10);
+  --accent: #5B7288;
+  --success: #6B8B73;
+  --danger: #C96B5E;
+  --banner-bg: linear-gradient(135deg, #6B7B8B 0%, #8E9CAA 50%, #5B7288 100%);
+}
+
+/* ========================================
+   皮肤7：素白 · Plain White
+   ======================================== */
+body[data-skin="7"] {
+  --primary: #4A4A4A;
+  --primary-light: #7A7A7A;
+  --bg-main: #FFFFFF;
+  --bg-card: #F8F8F8;
+  --text-main: #1A1A1A;
+  --text-sub: #8A8A8A;
+  --border: #E5E5E5;
+  --shadow: rgba(0, 0, 0, 0.06);
+  --accent: #5A5A5A;
+  --success: #6AAA6A;
+  --danger: #C05050;
+  --banner-bg: linear-gradient(135deg, #4A4A4A 0%, #7A7A7A 50%, #5A5A5A 100%);
+}
+
+/* ========================================
+   皮肤8：墨韵黑 · Ink Rhythm Black
+   ======================================== */
+body[data-skin="8"] {
+  --primary: #C0C0C0;
+  --primary-light: #D8D8D8;
+  --bg-main: #1A1A1A;
+  --bg-card: #252525;
+  --text-main: #E8E8E8;
+  --text-sub: #A0A0A0;
+  --border: #3A3A3A;
+  --shadow: rgba(255, 255, 255, 0.04);
+  --accent: #A0A0A0;
+  --success: #80C080;
+  --danger: #E06060;
+  --banner-bg: linear-gradient(135deg, #1A1A1A 0%, #3A3A3A 50%, #252525 100%);
+}
