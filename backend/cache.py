@@ -33,6 +33,18 @@ async def get_redis() -> Optional[aioredis.Redis]:
         return None
 
 
+async def close_redis():
+    """优雅关闭 Redis 连接（防止 Event loop closed 告警）"""
+    global _pool
+    if _pool is not None:
+        try:
+            await _pool.aclose()
+        except Exception:
+            pass
+        _pool = None
+        logger.info("Redis 连接已关闭")
+
+
 # ============================================================
 # 缓存装饰器
 # ============================================================

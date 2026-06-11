@@ -140,7 +140,7 @@ onMounted(fetchHome)
           <div class="staff-actions">
             <div class="home-card card" @click="router.push('/question')">
               <span class="hc-icon">❓</span>
-              <span class="hc-title">每日一题</span>
+              <span class="hc-title">每次一题</span>
               <span class="hc-desc" :style="{ color: data.has_today_question ? 'var(--success)' : 'var(--text-sub)' }">
                 {{ data.has_today_question ? '待完成' : '今日已完成' }}
               </span>
@@ -269,7 +269,7 @@ onMounted(fetchHome)
             <span class="hc-title">团队看板</span>
             <span class="hc-desc">部门掌握度</span>
           </div>
-          <div class="home-card card" @click="router.push('/knowledge')">
+          <div class="home-card card" @click="router.push('/knowledge-manage')">
             <span class="hc-icon">📚</span>
             <span class="hc-title">知识库</span>
             <span class="hc-desc">浏览搜索</span>

@@ -4,9 +4,9 @@ import { useAuthStore } from './stores/auth'
 const routes = [
   { path: '/login', name: 'Login', component: () => import('./views/Login.vue'), meta: { guest: true } },
   { path: '/', name: 'Home', component: () => import('./views/Home.vue') },
-  { path: '/knowledge', name: 'KnowledgeBase', component: () => import('./views/KnowledgeBase.vue') },
+  { path: '/knowledge', redirect: '/knowledge-manage' },
   { path: '/knowledge/:id', name: 'KnowledgeDetail', component: () => import('./views/KnowledgeDetail.vue') },
-  { path: '/knowledge-manage', name: 'KnowledgeManage', component: () => import('./views/KnowledgeManage.vue'), meta: { admin: true } },
+  { path: '/knowledge-manage', name: 'KnowledgeManage', component: () => import('./views/KnowledgeManage.vue') },
   { path: '/review', name: 'ReviewCenter', component: () => import('./views/ReviewCenter.vue'), meta: { admin: true } },
   { path: '/submit-experience', name: 'ExperienceSubmit', component: () => import('./views/ExperienceSubmit.vue'), meta: { staff: true } },
   { path: '/personal-dashboard', name: 'PersonalDashboard', component: () => import('./views/PersonalDashboard.vue'), meta: { staff: true } },

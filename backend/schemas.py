@@ -192,3 +192,13 @@ class LLMProviderCreate(BaseModel):
 class SettingUpdate(BaseModel):
     config_key: str
     config_value: str
+
+
+class BatchAIQuestionRequest(BaseModel):
+    content_text: str = Field(..., max_length=50000)
+    target_position: str = ""
+    count: int = Field(default=5, ge=1, le=20)
+
+
+class BatchQuestionImport(BaseModel):
+    questions: list[dict] = []

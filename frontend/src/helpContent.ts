@@ -223,28 +223,28 @@ export const helpContent: Record<string, HelpSection> = {
   },
 
   QuestionAnswer: {
-    title: '每日一题',
-    what: '每天一道与您岗位相关的测试题，帮助巩固知识。答对获得积分，答错进入错题本可复习重答。',
+    title: '每次一题',
+    what: '每次进入页面，系统根据您的岗位自动分配一道测试题。答对获得积分，答错进入错题本可复习重答。',
     how: [
-      '页面显示今天的题目（按您的岗位推送）',
+      '页面根据您的岗位自动推送一道题',
       '选择题点击选项，判断题选对/错，填空题输入文字',
       '点击"提交答案"',
       '立即显示结果：正确/错误 + 详细解析',
       '答对自动+1积分，答错题目自动加入错题本',
-      '如果今天已经答过，显示历史答案和解析',
+      '点击"下一题"继续挑战下一道',
     ],
     related: [
       { name: '学习中心', link: '/learning' },
       { name: '考试管理（管理员）', link: '/exam-manage' },
       { name: '知识库浏览', link: '/knowledge' },
     ],
-    logic: '<b>题目推送规则</b>：<br>1. 按用户岗位匹配 target_position 相同的题目<br>2. 排除该用户最近14天已经答过的题目<br>3. 按 difficulty_level 递增排序（先推简单的）<br>4. 如果岗位题目已轮完，推送公共知识库题目<br><br>答对：写 learning_records(learn_type="test", score=100)，写 experience_points(+1)<br>答错：写 learning_records(learn_type="test", score=0)，不加积分，题目入错题本',
-    note: '每天只有一道题，答完后当天不会再推送新题。第二天0点刷新题目。',
+    logic: '<b>题目推送规则</b>：<br>1. 按用户岗位匹配 target_position 相同的题目<br>2. 排除该用户最近14天已经推送的题目<br>3. 按 difficulty_level 递增排序（先推简单的）<br>4. 如果岗位题目已轮完，推送公共知识库题目<br>5. 全部轮完则重置周期重新开始<br><br>答对：写 learning_records(learn_type="test", score=100)，写 experience_points(+1)<br>答错：写 learning_records(learn_type="test", score=0)，不加积分，题目入错题本',
+    note: '每次进入页面都会分配一道新题。14天内已推送过的题目不会重复。',
   },
 
   ExamManage: {
     title: '考试管理',
-    what: '管理每日一题的题库。可以新增、编辑、删除题目，支持批量导入和AI自动出题。',
+    what: '管理每次一题的题库。可以新增、编辑、删除题目，支持批量导入和AI自动出题。',
     how: [
       '题目列表可按岗位、难度、题型筛选',
       '点击"新增题目"弹出表单',

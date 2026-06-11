@@ -10,7 +10,7 @@ interface TabItem { path: string; label: string; icon: string; roles: string[] }
 
 const allTabs: TabItem[] = [
   { path: '/', label: '首页', icon: '🏠', roles: ['boss', 'admin', 'staff'] },
-  { path: '/knowledge', label: '知识库', icon: '📚', roles: ['boss', 'admin', 'staff'] },
+  { path: '/knowledge-manage', label: '知识', icon: '📚', roles: ['boss', 'admin', 'staff'] },
   { path: '/submit-experience', label: '经验', icon: '✏️', roles: ['staff'] },
   { path: '/learning', label: '学习', icon: '🎓', roles: ['staff'] },
   { path: '/review', label: '审核', icon: '✅', roles: ['admin'] },

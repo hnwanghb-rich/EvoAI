@@ -208,7 +208,7 @@ async def _seed_system_config(db):
         SystemConfig(config_key="points_monthly_top5", config_value="50",
                      config_type="int", description="月度TOP5积分"),
         SystemConfig(config_key="points_daily_question", config_value="1",
-                     config_type="int", description="每日一题答对积分"),
+                     config_type="int", description="每次一题答对积分"),
         SystemConfig(config_key="points_complete_course", config_value="3",
                      config_type="int", description="完成课程积分"),
         SystemConfig(config_key="flywheel_view_threshold", config_value="5",

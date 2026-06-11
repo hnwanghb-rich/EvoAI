@@ -326,6 +326,10 @@ class DailyQuestion(Base):
     related_knowledge_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("knowledge_entries.id", ondelete="SET NULL"), nullable=True
     )
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("knowledge_categories.id", ondelete="SET NULL"), nullable=True
+    )
+    tags: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     push_date: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

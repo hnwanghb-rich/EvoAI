@@ -8,9 +8,60 @@ const chat = useChatStore()
 const auth = useAuthStore()
 const input = ref('')
 const msgList = ref<HTMLDivElement>()
+const floatBtn = ref<HTMLButtonElement>()
 const recording = ref(false)
 const mediaRecorder = ref<MediaRecorder | null>(null)
 const audioChunks = ref<Blob[]>([])
+
+// === 悬浮按钮拖拽（支持鼠标 + 触摸） ===
+const floatPos = ref({ x: 20, y: 60 })
+const dragging = ref(false)
+const dragStart = ref({ x: 0, y: 0, ox: 0, oy: 0 })
+const hasMoved = ref(false)
+
+function onDragStart(e: PointerEvent) {
+  if (chat.open) return
+  floatBtn.value?.setPointerCapture(e.pointerId)
+  dragging.value = true
+  hasMoved.value = false
+  dragStart.value = {
+    x: e.clientX,
+    y: e.clientY,
+    ox: floatPos.value.x,
+    oy: floatPos.value.y,
+  }
+}
+
+function onDragMove(e: PointerEvent) {
+  if (!dragging.value) return
+  const dx = dragStart.value.x - e.clientX
+  const dy = dragStart.value.y - e.clientY
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved.value = true
+  floatPos.value = {
+    x: Math.min(Math.max(dragStart.value.ox + dx, 8), window.innerWidth - 64),
+    y: Math.min(Math.max(dragStart.value.oy + dy, 8), window.innerHeight - 64),
+  }
+}
+
+function onDragEnd() {
+  dragging.value = false
+  savePosition()
+  if (!hasMoved.value) {
+    chat.toggle() // 没拖动 = 点击打开
+  }
+}
+
+function loadPosition() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('aneng_pos') || '{}')
+    if (saved.x != null && saved.y != null) floatPos.value = saved
+  } catch {/* use default */}
+}
+function savePosition() {
+  localStorage.setItem('aneng_pos', JSON.stringify(floatPos.value))
+}
+
+loadPosition()
 
 const modeLabel: Record<string, string> = {
   knowledge_qa: '知识问答',
@@ -118,8 +169,19 @@ function stopVoice() {
 </script>
 
 <template>
-  <!-- 悬浮按钮 -->
-  <button v-if="!chat.open" class="aneng-float" @click="chat.toggle()" title="召唤阿能">
+  <!-- 悬浮按钮（可拖拽） -->
+  <button
+    v-if="!chat.open"
+    ref="floatBtn"
+    class="aneng-float"
+    :style="{ right: floatPos.x + 'px', bottom: floatPos.y + 'px' }"
+    @pointerdown.prevent="onDragStart"
+    @pointermove="onDragMove"
+    @pointerup="onDragEnd"
+    @pointercancel="onDragEnd"
+    :class="{ dragging: dragging }"
+    title="拖动移动 · 点击召唤阿能"
+  >
     <span class="aneng-icon">🤖</span>
     <span class="aneng-label">阿能</span>
   </button>
@@ -135,7 +197,7 @@ function stopVoice() {
             <span>数字老师 · 阿能</span>
           </div>
           <div class="aneng-head-actions">
-            <button class="aneng-btn-icon" @click="chat.clear()" title="清空对话">🗑</button>
+            <button class="aneng-btn-icon" @click="chat.clearChat()" title="清空对话">🗑</button>
             <button class="aneng-btn-icon" @click="chat.toggle()">×</button>
           </div>
         </div>
@@ -149,6 +211,18 @@ function stopVoice() {
           >
             <div class="msg-bubble">
               <div class="msg-content" v-html="msg.content.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')"></div>
+              <!-- 来源标识 -->
+              <div v-if="msg.role === 'assistant' && msg.source && !msg.streaming" class="msg-source">
+                <span v-if="msg.source === 'knowledge_base'" class="source-badge kb" title="来自企业知识库">
+                  📚 知识库 · 匹配度 {{ ((msg.confidence || 0) * 100).toFixed(0) }}%
+                </span>
+                <span v-else-if="msg.source === 'llm'" class="source-badge llm" title="AI大模型生成">
+                  🤖 AI生成 · 基于检索
+                </span>
+                <span v-else-if="msg.source === 'llm_no_match'" class="source-badge llm-no" title="AI通用知识兜底">
+                  🌐 通用知识 · 知识库无匹配
+                </span>
+              </div>
               <!-- 引用卡片 -->
               <div v-if="msg.references && msg.references.length && msg.role === 'assistant' && !msg.streaming" class="msg-refs">
                 <div class="refs-title">📚 参考来源：</div>
@@ -200,27 +274,30 @@ function stopVoice() {
 /* 悬浮按钮 */
 .aneng-float {
   position: fixed;
-  right: 20px;
-  bottom: 60px;
   z-index: 950;
   width: 56px; height: 56px;
   border-radius: 50%;
   border: none;
   background: var(--primary);
   color: #fff;
-  cursor: pointer;
+  cursor: grab;
   box-shadow: 0 4px 16px var(--shadow);
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   transition: transform 0.2s, box-shadow 0.2s;
+  touch-action: none;
+  user-select: none;
 }
 .aneng-float:hover {
   transform: scale(1.08);
   box-shadow: 0 6px 24px rgba(0,0,0,0.2);
 }
-.aneng-icon { font-size: 22px; }
-.aneng-label { font-size: 10px; }
-
+.aneng-float.dragging {
+  cursor: grabbing;
+  transform: scale(1.12);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.3);
+  transition: none;
+}
 /* 面板 */
 .aneng-overlay {
   position: fixed; inset: 0;
@@ -300,6 +377,15 @@ function stopVoice() {
   outline: none;
 }
 .aneng-input textarea:focus { border-color: var(--primary); }
+
+/* 来源标识 */
+.msg-source { margin-top: 6px; }
+.source-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 11px;
+}
+.source-badge.kb { background: rgba(122,166,104,0.12); color: var(--success); border: 1px solid rgba(122,166,104,0.3); }
+.source-badge.llm { background: rgba(74,144,217,0.1); color: #4A90D9; border: 1px solid rgba(74,144,217,0.3); }
+.source-badge.llm-no { background: rgba(232,130,74,0.1); color: var(--accent); border: 1px solid rgba(232,130,74,0.3); }
 
 /* 语音按钮 */
 .aneng-mic, .aneng-mic-recording {

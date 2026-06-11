@@ -33,6 +33,125 @@ def _kb_filter(user: User) -> list[str]:
 # 固定路径路由（必须在 {entry_id} 之前！）
 # ============================================================
 
+@router.get("/knowledge/unified", response_model=ApiResponse)
+async def unified_search(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: str = Query("", max_length=200),
+    category_id: int = Query(0),
+    knowledge_base: str = Query("", max_length=20),
+    item_type: str = Query("all", max_length=20),
+    user: User = Depends(get_current_user),
+):
+    """
+    统一搜索：知识条目 + 每日试题
+    item_type: all | knowledge | question
+    """
+    allowed_kb = _kb_filter(user)
+    results = []
+    total = 0
+
+    async with async_session() as db:
+        # === 知识条目 ===
+        if item_type in ("all", "knowledge"):
+            q = select(
+                KnowledgeEntry.id, KnowledgeEntry.title,
+                KnowledgeEntry.content, KnowledgeEntry.knowledge_base,
+                KnowledgeEntry.category_id, KnowledgeEntry.view_count,
+                KnowledgeEntry.useful_count, KnowledgeEntry.tags,
+                KnowledgeEntry.car_brand, KnowledgeEntry.car_model,
+                KnowledgeEntry.difficulty_level, KnowledgeEntry.created_at,
+            ).where(
+                KnowledgeEntry.status == "approved",
+                KnowledgeEntry.knowledge_base.in_(allowed_kb),
+            )
+            cq = select(func.count(KnowledgeEntry.id)).where(
+                KnowledgeEntry.status == "approved",
+                KnowledgeEntry.knowledge_base.in_(allowed_kb),
+            )
+            if keyword:
+                like = f"%{keyword}%"
+                kf = or_(KnowledgeEntry.title.ilike(like), KnowledgeEntry.content.ilike(like), KnowledgeEntry.tags.ilike(like))
+                q = q.where(kf); cq = cq.where(kf)
+            if category_id > 0:
+                q = q.where(KnowledgeEntry.category_id == category_id)
+                cq = cq.where(KnowledgeEntry.category_id == category_id)
+            if knowledge_base and knowledge_base in allowed_kb:
+                q = q.where(KnowledgeEntry.knowledge_base == knowledge_base)
+                cq = cq.where(KnowledgeEntry.knowledge_base == knowledge_base)
+
+            ke_total = (await db.execute(cq)).scalar() or 0
+            ke_rows = (await db.execute(q.order_by(KnowledgeEntry.created_at.desc()).limit(page_size).offset((page-1)*page_size))).all()
+            for r in ke_rows:
+                results.append({
+                    "id": r[0], "title": r[1], "content": (r[2] or "")[:150],
+                    "knowledge_base": r[3], "category_id": r[4],
+                    "view_count": r[5], "useful_count": r[6], "tags": r[7],
+                    "car_brand": r[8], "car_model": r[9],
+                    "difficulty_level": r[10],
+                    "created_at": r[11].isoformat() if r[11] else None,
+                    "item_type": "knowledge",
+                })
+            total += ke_total
+
+        # === 试题 ===
+        if item_type in ("all", "question"):
+            from models import DailyQuestion as DQ
+            qq = select(
+                DQ.id, DQ.question_content,
+                DQ.question_type, DQ.target_position,
+                DQ.category_id, DQ.difficulty_level,
+                DQ.tags, DQ.created_at,
+            )
+            c2 = select(func.count(DQ.id))
+            if keyword:
+                like = f"%{keyword}%"
+                qq = qq.where(DQ.question_content.ilike(like))
+                c2 = c2.where(DQ.question_content.ilike(like))
+            if category_id > 0:
+                qq = qq.where(DQ.category_id == category_id)
+                c2 = c2.where(DQ.category_id == category_id)
+            if knowledge_base:
+                # 试题没有 knowledge_base，按 target_position 近似匹配
+                # 查询该 kb 下的分类 ID，然后匹配 questions 的 category_id
+                cat_ids_r = await db.execute(
+                    select(KnowledgeCategory.id).where(KnowledgeCategory.knowledge_base == knowledge_base)
+                )
+                cat_ids = [r[0] for r in cat_ids_r]
+                if cat_ids:
+                    qq = qq.where(DQ.category_id.in_(cat_ids))
+                    c2 = c2.where(DQ.category_id.in_(cat_ids))
+                else:
+                    qq = qq.where(DQ.id == -1)  # 无匹配时返回空
+                    c2 = c2.where(DQ.id == -1)
+
+            q_total = (await db.execute(c2)).scalar() or 0
+            q_rows = (await db.execute(qq.order_by(DQ.created_at.desc()).limit(page_size).offset((page-1)*page_size))).all()
+            for r in q_rows:
+                qt_val = r[2]
+                qt_str = qt_val.value if hasattr(qt_val, 'value') else str(qt_val)
+                results.append({
+                    "id": r[0], "title": str(r[1])[:100],
+                    "content": str(r[1])[:150],
+                    "knowledge_base": "public",
+                    "category_id": r[4],
+                    "view_count": 0,
+                    "question_type": qt_str,
+                    "target_position": r[3],
+                    "difficulty_level": r[5] or 1,
+                    "tags": r[6],
+                    "created_at": r[7].isoformat() if r[7] else None,
+                    "item_type": "question",
+                })
+            total += q_total
+
+    # 按时间排序并分页
+    results.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    results = results[:page_size]
+
+    return ApiResponse(data={"items": results, "total": total, "page": page, "page_size": page_size})
+
+
 @router.get("/knowledge/hot", response_model=ApiResponse)
 async def hot_knowledge(user: User = Depends(get_current_user)):
     """热门知识 TOP10"""

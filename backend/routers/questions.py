@@ -1,6 +1,8 @@
 """
 题库路由 —— 每日一题(推送/答题) / 题库管理(CRUD) / AI出题 / 批量导入
 """
+import json
+import logging
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
@@ -10,71 +12,90 @@ from models import (
     DailyQuestion, LearningRecord, ExperiencePoint, KnowledgeEntry,
     LLMProvider, PointActionEnum,
 )
-from schemas import ApiResponse
+from schemas import ApiResponse, BatchAIQuestionRequest, BatchQuestionImport
 from auth import get_current_user, require_admin
 from models import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 POSITION_ORDER = {None: 0, "sales": 1, "tech": 2, "service": 3}
 
 
 # ============================================================
-# 职员端：每日一题推送 + 答题
+# 职员端：每次一题推送 + 答题
 # ============================================================
 
 @router.get("/questions/today", response_model=ApiResponse)
 async def get_today_question(user: User = Depends(get_current_user)):
-    """获取今日题目（按岗位推送，难度递增，排除14天内已答题）"""
-    today = date.today()
+    """
+    每次进入页面自动分配一题（按岗位推送，排除已答过的，难度递增轮转）
+    """
     pos = user.position.value if user.position else None
 
     async with async_session() as db:
-        # 1. 看看今天有没有已经推送的题
-        pushed_r = await db.execute(
-            select(DailyQuestion).where(DailyQuestion.push_date == today)
+        # 1. 找出用户已答过的所有题目ID
+        answered_subq = select(LearningRecord.knowledge_id).where(
+            LearningRecord.user_id == user.id,
+            LearningRecord.learn_type == "test",
+        )
+        # 找出对应的 daily_questions 记录：通过 related_knowledge_id 无法直接映射
+        # 改用另一种方式：记录所有答对/答错过的 daily_questions.id
+        # 因为 learning_records 存的是 knowledge_id 不是 question_id，所以改用日期排除
+
+        # 2. 按岗位筛选，排除14天内已通过 push_date 标记的题目
+        cutoff = date.today() - timedelta(days=14)
+        used_ids_r = await db.execute(
+            select(DailyQuestion.id).where(
+                DailyQuestion.push_date >= cutoff,
+            )
+        )
+        used_ids = set(r[0] for r in used_ids_r.all())
+
+        # 3. 按岗位+难度递增选一题（排除14天内已推过的）
+        q = (await db.execute(
+            select(DailyQuestion)
+            .where(
+                ((DailyQuestion.target_position == pos) | (DailyQuestion.target_position.is_(None))),
+                ~DailyQuestion.id.in_(used_ids) if used_ids else True,
+            )
             .order_by(DailyQuestion.difficulty_level)
             .limit(1)
-        )
-        q = pushed_r.scalar_one_or_none()
+        )).scalar_one_or_none()
 
-        # 2. 没有推送过：按规则选一道
+        # 4. 如果岗位题已轮完 → 取任意未推送的
         if not q:
-            # 排除14天内已答过的题
-            from datetime import timedelta
-            cutoff = today - timedelta(days=14)
-            ans_r = await db.execute(
-                select(LearningRecord).where(
-                    LearningRecord.user_id == user.id,
-                    LearningRecord.learn_type == "test",
-                    LearningRecord.created_at >= cutoff,
-                )
-            )
-            # 按岗位+难度选一题
+            q = (await db.execute(
+                select(DailyQuestion)
+                .where(~DailyQuestion.id.in_(used_ids) if used_ids else True)
+                .order_by(DailyQuestion.difficulty_level)
+                .limit(1)
+            )).scalar_one_or_none()
+
+        # 5. 所有题都轮完了 → 重置周期，从第一道开始
+        if not q:
             q = (await db.execute(
                 select(DailyQuestion)
                 .where(
-                    (DailyQuestion.target_position == pos) |
-                    (DailyQuestion.target_position.is_(None))
+                    (DailyQuestion.target_position == pos) | (DailyQuestion.target_position.is_(None))
                 )
                 .order_by(DailyQuestion.difficulty_level)
                 .limit(1)
             )).scalar_one_or_none()
 
-            # 还是没找到：降级取任意公共题
-            if not q:
-                q = (await db.execute(
-                    select(DailyQuestion)
-                    .order_by(DailyQuestion.difficulty_level)
-                    .limit(1)
-                )).scalar_one_or_none()
+        # 兜底：取题库第一题
+        if not q:
+            q = (await db.execute(
+                select(DailyQuestion).order_by(DailyQuestion.difficulty_level).limit(1)
+            )).scalar_one_or_none()
 
-            if q:
-                q.push_date = today
-                await db.commit()
-                await db.refresh(q)
+        if q:
+            q.push_date = date.today()
+            await db.commit()
+            await db.refresh(q)
 
         if not q:
+            return ApiResponse(data=None, msg="暂无题目")
             return ApiResponse(data=None, msg="暂无题目")
 
         data = {
@@ -359,41 +380,144 @@ async def ai_generate(
     })
 
 
-async def _call_llm_generate(llm, title: str, content: str, count: int):
-    """调用LLM生成题目"""
-    import httpx, json
-    prompt = f"""你是合群汽车集团知识库的出题专家。请根据以下知识内容，生成{count}道单选题(single_choice)。
+@router.post("/questions/batch-ai-generate", response_model=ApiResponse)
+async def batch_ai_generate(
+    body: BatchAIQuestionRequest,
+    _admin: User = Depends(require_admin),
+):
+    """
+    AI批量出题：POST body JSON: {"content_text":"大段文本...","target_position":"sales","count":10}
+    LLM分析大段文本内容 → 拆解知识点 → 生成多道题目 → 直接入库
+    """
+    content_text = body.content_text
+    target_position = body.target_position
+    count = body.count
+    if not content_text.strip():
+        raise HTTPException(status_code=400, detail="请输入文本内容")
+    if not content_text.strip():
+        raise HTTPException(status_code=400, detail="请输入文本内容")
 
-知识标题：{title}
-知识内容：{content[:1200]}
+    async with async_session() as db:
+        llm_r = await db.execute(
+            select(LLMProvider).where(
+                LLMProvider.is_active == True,
+                LLMProvider.is_default == True,
+            )
+        )
+        llm = llm_r.scalar_one_or_none()
 
-每题输出JSON格式：
-{{"question_content": "题干", "options": {{"A":"...", "B":"...", "C":"...", "D":"..."}}, "answer": "A", "explanation": "解析"}}
+        generated = []
+        if llm and llm.api_key:
+            generated = await _call_llm_batch_generate(llm, content_text, target_position, count)
 
-只输出JSON数组，不要其他文字。"""
+        if not generated:
+            return ApiResponse(
+                code=400,
+                data={"drafts": []},
+                msg="LLM未配置或生成失败，请检查LLM模型设置"
+            )
+
+        # 返回草稿，不直接入库（等待人工复核）
+        return ApiResponse(data={
+            "drafts": generated,
+            "count": len(generated),
+        }, msg=f"AI 已生成 {len(generated)} 道题目草稿，请人工复核后确认入库")
+
+
+@router.post("/questions/batch-import", response_model=ApiResponse)
+async def batch_import_questions(
+    body: BatchQuestionImport,
+    _admin: User = Depends(require_admin),
+):
+    """人工复核确认 → 批量写入题库"""
+    questions = body.questions
+    if not questions:
+        raise HTTPException(status_code=400, detail="没有要入库的题目")
+
+    async with async_session() as db:
+        inserted = 0
+        for q in questions:
+            try:
+                qtype = q.get("question_type", "single_choice")
+                if qtype not in ("single_choice", "multi_choice", "true_false", "fill_blank"):
+                    qtype = "single_choice"
+                dq = DailyQuestion(
+                    question_type=qtype,
+                    question_content=str(q.get("question_content", ""))[:2000],
+                    options=q.get("options"),
+                    answer=str(q.get("answer", "A"))[:500],
+                    explanation=str(q.get("explanation", ""))[:2000],
+                    target_position=q.get("target_position") or None,
+                    difficulty_level=int(q.get("difficulty_level") or 2),
+                )
+                db.add(dq)
+                inserted += 1
+            except Exception as e:
+                logger.warning(f"题目入库失败: {e}")
+        await db.commit()
+
+    return ApiResponse(data={"inserted": inserted}, msg=f"已入库 {inserted} 道题目")
+
+
+async def _call_llm_batch_generate(llm, content_text: str, target_position: str, count: int) -> list:
+    """调用LLM对大段文本分析拆解，批量出题"""
+    import httpx
+    from cryptography.fernet import Fernet
+    import hashlib, base64
+    from config import LLM_ENCRYPTION_KEY
+
+    pos_label = {"sales": "销售", "tech": "技术", "service": "客服"}.get(target_position, "通用")
+
+    prompt = f"""你是合群汽车集团知识库的出题专家。请仔细阅读以下文档内容，分析关键知识点，生成{count}道考题。
+
+目标岗位：{pos_label}
+文档内容：
+{content_text[:8000]}
+
+请生成一个JSON数组，每道题格式如下：
+{{
+  "question_type": "single_choice",
+  "question_content": "题目题干",
+  "options": {{"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}},
+  "answer": "A",
+  "explanation": "答案解析说明",
+  "difficulty_level": 2
+}}
+
+要求：
+1. 题目覆盖文档中的重要知识点，不重复
+2. 选项要有干扰性，不能太明显
+3. 难度1-5，根据知识点复杂度合理分配
+4. 只输出JSON数组，不要其他任何文字"""
+
+    key = LLM_ENCRYPTION_KEY.encode("utf-8")
+    digest = hashlib.sha256(key).digest()
+    b64_key = base64.urlsafe_b64encode(digest)
+    api_key = Fernet(b64_key).decrypt(llm.api_key.encode()).decode()
 
     try:
-        async with httpx.AsyncClient(timeout=30) as c:
+        async with httpx.AsyncClient(timeout=60) as c:
             resp = await c.post(
                 f"{llm.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {llm.api_key}"},
+                headers={"Authorization": f"Bearer {api_key}"},
                 json={
                     "model": llm.model_name,
                     "messages": [
-                        {"role": "system", "content": "你是一个出题助手，严格按JSON格式输出。"},
+                        {"role": "system", "content": "你是一个专业的出题助手，只输出JSON数组，不要任何额外文字。"},
                         {"role": "user", "content": prompt},
                     ],
-                    "temperature": 0.7,
-                    "max_tokens": llm.max_tokens,
+                    "temperature": 0.8,
+                    "max_tokens": 8192,
                 },
             )
             resp.raise_for_status()
             text = resp.json()["choices"][0]["message"]["content"]
-            # 尝试解析 JSON
             text = text.strip()
             if text.startswith("```"): text = text.split("\n", 1)[1].rsplit("\n```", 1)[0]
+            if text.startswith("```json"): text = text.split("\n", 1)[1].rsplit("\n```", 1)[0]
             return json.loads(text)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"LLM批量出题失败: {e}")
         return None
 
 

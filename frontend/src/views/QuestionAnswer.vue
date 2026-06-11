@@ -54,15 +54,26 @@ async function submitAnswer() {
   }
 }
 
+function nextQuestion() {
+  // 重置状态 → 重新获取题目
+  loading.value = true
+  question.value = null
+  result.value = null
+  userAnswer.value = ''
+  selectedOption.value = ''
+  noQuestion.value = false
+  fetchToday()
+}
+
 onMounted(fetchToday)
 </script>
 
 <template>
   <div class="qa-page">
-    <h2 class="page-title">每日一题</h2>
+    <h2 class="page-title">每次一题</h2>
 
     <div v-if="loading" class="qa-loading">加载中...</div>
-    <div v-else-if="noQuestion" class="qa-empty">🎉 暂无题目，请明天再来！</div>
+    <div v-else-if="noQuestion" class="qa-empty">🎉 题库中暂无适合您的题目</div>
 
     <template v-else-if="question">
       <div class="qa-card card">
@@ -117,6 +128,7 @@ onMounted(fetchToday)
           <div class="qa-result-text">{{ result.correct ? '回答正确！+1积分' : '回答错误，已加入错题本' }}</div>
           <div class="qa-answer"><b>正确答案：</b>{{ result.answer }}</div>
           <div class="qa-explanation" v-if="result.explanation">{{ result.explanation }}</div>
+          <button class="btn qa-next" @click="nextQuestion">下一题 →</button>
         </div>
       </div>
     </template>
@@ -155,6 +167,7 @@ onMounted(fetchToday)
 .qa-result-text { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
 .qa-answer { font-size: 14px; margin-bottom: 6px; }
 .qa-explanation { font-size: 13px; color: var(--text-sub); line-height: 1.6; }
+.qa-next { margin-top: 12px; width: 100%; padding: 10px; font-size: 15px; }
 
 @media (max-width: 768px) {
   .qa-card { padding: 16px 12px; }

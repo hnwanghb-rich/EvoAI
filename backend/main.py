@@ -41,6 +41,12 @@ async def lifespan(app: FastAPI):
         await engine.dispose()
     except Exception:
         pass
+    # 关闭 Redis 连接（避免 Event loop closed 告警）
+    try:
+        from cache import close_redis
+        await close_redis()
+    except Exception:
+        pass
 
 
 app = FastAPI(

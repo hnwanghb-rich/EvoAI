@@ -26,20 +26,23 @@ function renderChart() {
     chart = echarts.init(chartRef.value)
   }
 
-  const indicators = props.data.map(d => ({
-    name: d.category_name.replace(/^(.{4}).*/, '$1…').slice(0, 5),
+  // 最多显示 10 个维度，优先显示掌握度低的（薄弱领域）
+  const displayData = props.data.length > 10
+    ? [...props.data].sort((a, b) => a.mastery - b.mastery).slice(0, 10)
+    : props.data
+
+  const indicators = displayData.map(d => ({
+    name: d.category_name,
     max: 100,
   }))
-  const fullNames = props.data.map(d => d.category_name)
 
   chart.setOption({
     tooltip: {
+      trigger: 'item',
       formatter: (p: any) => {
-        const i = p.dataIndex
-        const name = fullNames[p.seriesIndex] || ''
-        const idx = p.dimensionIndex
-        const cat = fullNames[idx] || ''
-        return `<b>${cat}</b><br/>${name}: ${p.value}%`
+        const dimName = p.name || p.dimensionNames?.[p.dimensionIndex] || ''
+        const vals = Array.isArray(p.value) ? p.value : [p.value]
+        return `<b>${dimName}</b><br/>${p.seriesName}: ${vals[0] ?? p.value}%`
       },
     },
     legend: {
@@ -48,16 +51,19 @@ function renderChart() {
       textStyle: { color: 'var(--text-sub, #888)', fontSize: 12 },
     },
     radar: {
-      center: ['50%', '48%'],
-      radius: '65%',
+      center: ['50%', '52%'],
+      radius: '58%',
       indicator: indicators,
-      axisName: { color: 'var(--text-sub, #888)', fontSize: 11 },
+      axisName: { color: 'var(--text-main)', fontSize: 12, fontWeight: 500 },
+      name: {
+        textStyle: { color: 'var(--text-main)', fontSize: 12 },
+      },
     },
     series: [
       {
         name: '我的掌握度',
         type: 'radar',
-        data: [{ value: props.data.map(d => d.mastery), name: '掌握度' }],
+        data: [{ value: displayData.map(d => d.mastery), name: '掌握度' }],
         lineStyle: { color: '#4A90D9', width: 2 },
         areaStyle: { color: 'rgba(74,144,217,0.15)' },
         itemStyle: { color: '#4A90D9' },
@@ -67,7 +73,7 @@ function renderChart() {
       {
         name: '岗位期望',
         type: 'radar',
-        data: [{ value: props.data.map(d => d.expected), name: '期望' }],
+        data: [{ value: displayData.map(d => d.expected), name: '期望' }],
         lineStyle: { color: '#E8824A', width: 2, type: 'dashed' },
         areaStyle: { color: 'rgba(232,130,74,0.05)' },
         itemStyle: { color: '#E8824A' },
@@ -82,7 +88,7 @@ onMounted(() => { renderChart() })
 watch(() => props.data, () => { chart?.dispose(); chart = null; renderChart() }, { deep: true })
 onUnmounted(() => { chart?.dispose() })
 
-const h = computed(() => props.height || '340px')
+const h = computed(() => props.height || '420px')
 </script>
 
 <template>

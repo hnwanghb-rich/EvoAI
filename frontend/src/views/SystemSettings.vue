@@ -5,14 +5,21 @@ import axios from 'axios'
 interface SettingRow { id?: number; value: string; type: string; description: string; updated_at?: string | null }
 interface LogItem { id: number; user_id: number | null; username: string | null; action: string; target_type: string | null; target_id: number | null; detail: string | null; ip_address: string | null; created_at: string | null }
 
-const activeTab = ref<'points' | 'flywheel' | 'logs' | 'export'>('points')
+const activeTab = ref<'points' | 'flywheel' | 'categories' | 'logs' | 'export'>('points')
+
+// 分类标签管理
+interface CatItem { id: number; name: string; knowledge_base: string; sort_order: number; icon: string | null; knowledge_count: number; question_count: number }
+const catList = ref<CatItem[]>([])
+const catShowForm = ref(false)
+const catEditing = ref<Partial<CatItem>>({})
+const catIsEdit = ref(false)
 
 // 积分规则
 const pointsConfig = ref<Record<string, SettingRow>>({})
 const pointKeys = ['points_submit', 'points_approved', 'points_useful', 'points_monthly_top5', 'points_daily_question', 'points_complete_course']
 const pointLabels: Record<string, string> = {
   points_submit: '提交经验', points_approved: '审核通过', points_useful: '被标记有用',
-  points_monthly_top5: '月度TOP5', points_daily_question: '每日一题答对', points_complete_course: '完成课程',
+  points_monthly_top5: '月度TOP5', points_daily_question: '每次一题答对', points_complete_course: '完成课程',
 }
 
 // 飞轮阈值
@@ -68,6 +75,26 @@ async function fetchLogs() {
   logsTotal.value = data.data.total
 }
 
+// === 分类标签管理 ===
+async function fetchCategories() {
+  try { const { data } = await axios.get('/api/settings/categories'); catList.value = data.data } catch {/* */ }
+}
+function catOpenCreate() {
+  catIsEdit.value = false; catEditing.value = { name: '', knowledge_base: 'public', icon: '📄', sort_order: 0 }
+  catShowForm.value = true
+}
+function catOpenEdit(c: CatItem) { catIsEdit.value = true; catEditing.value = { ...c }; catShowForm.value = true }
+async function catSave() {
+  const q = catEditing.value
+  if (catIsEdit.value && q.id) {
+    await axios.put(`/api/settings/categories/${q.id}`, null, { params: { name: q.name, knowledge_base: q.knowledge_base, icon: q.icon, sort_order: q.sort_order } })
+  } else {
+    await axios.post('/api/settings/categories', null, { params: { name: q.name, knowledge_base: q.knowledge_base, icon: q.icon || '📄', sort_order: q.sort_order || 0 } })
+  }
+  catShowForm.value = false; fetchCategories()
+}
+async function catDelete(id: number) { if (!confirm('确定删除此分类？关联的知识和试题不会删除。')) return; await axios.delete(`/api/settings/categories/${id}`); fetchCategories() }
+
 async function exportCSV() {
   exporting.value = true
   try {
@@ -92,7 +119,7 @@ async function exportCSV() {
   }
 }
 
-onMounted(() => { fetchSettings(); fetchLogs() })
+onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories() })
 </script>
 
 <template>
@@ -103,6 +130,7 @@ onMounted(() => { fetchSettings(); fetchLogs() })
     <div class="ss-tabs">
       <button :class="{ active: activeTab === 'points' }" @click="activeTab = 'points'">积分规则</button>
       <button :class="{ active: activeTab === 'flywheel' }" @click="activeTab = 'flywheel'">飞轮阈值</button>
+      <button :class="{ active: activeTab === 'categories' }" @click="activeTab = 'categories'; fetchCategories()">分类标签</button>
       <button :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'">审计日志</button>
       <button :class="{ active: activeTab === 'export' }" @click="activeTab = 'export'">数据导出</button>
     </div>
@@ -130,6 +158,48 @@ onMounted(() => { fetchSettings(); fetchLogs() })
         </div>
       </div>
     </div>
+
+    <!-- 分类标签管理 -->
+    <div v-if="activeTab === 'categories'" class="ss-tab card">
+      <div class="ss-cat-head">
+        <h3>知识分类标签 · 共 {{ catList.length }} 个</h3>
+        <button class="btn btn-sm" @click="catOpenCreate">+ 新增标签</button>
+      </div>
+      <p class="import-hint" style="margin-bottom:12px">标签同时适用于知识条目和试题筛选。修改后即刻生效。</p>
+      <table class="ss-cat-table">
+        <thead><tr><th>图标</th><th>名称</th><th>归属库</th><th>排序</th><th>知识数</th><th>试题数</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="c in catList" :key="c.id">
+            <td>{{ c.icon || '📄' }}</td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.knowledge_base === 'public' ? '公共' : c.knowledge_base === 'sales' ? '销售' : c.knowledge_base === 'tech' ? '技术' : '客服' }}</td>
+            <td>{{ c.sort_order }}</td>
+            <td><span style="color:var(--primary);font-weight:600">{{ c.knowledge_count }}</span></td>
+            <td><span style="color:var(--accent);font-weight:600">{{ c.question_count }}</span></td>
+            <td class="ss-cat-ops">
+              <button class="btn btn-sm btn-outline" @click="catOpenEdit(c)">编辑</button>
+              <button class="btn btn-sm btn-danger" @click="catDelete(c.id)">删除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 分类编辑弹窗 -->
+    <Teleport to="body">
+      <div v-if="catShowForm" class="modal-overlay" @click.self="catShowForm=false">
+        <div class="modal-panel" style="width:480px">
+          <div class="modal-header"><h3>{{ catIsEdit ? '编辑' : '新增' }}分类标签</h3><button @click="catShowForm=false" class="btn btn-sm">×</button></div>
+          <div class="modal-body">
+            <div class="form-group"><label>名称</label><input v-model="catEditing.name" class="form-input" style="width:100%" /></div>
+            <div class="form-group"><label>图标(emoji)</label><input v-model="catEditing.icon" class="form-input" style="width:100%" /></div>
+            <div class="form-group"><label>归属知识库</label><select v-model="catEditing.knowledge_base" class="form-input" style="width:100%"><option value="public">公共通用</option><option value="sales">销售专属</option><option value="tech">技术服务</option><option value="service">售后客服</option></select></div>
+            <div class="form-group"><label>排序序号</label><input v-model.number="catEditing.sort_order" type="number" class="form-input" style="width:100px" /></div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-outline" @click="catShowForm=false">取消</button><button class="btn" @click="catSave">保存</button></div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- 审计日志 -->
     <div v-if="activeTab === 'logs'" class="ss-tab">
@@ -217,6 +287,12 @@ onMounted(() => { fetchSettings(); fetchLogs() })
 .ss-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
 
 .ss-export-desc { font-size: 13px; color: var(--text-sub); margin-bottom: 16px; }
+.ss-cat-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.ss-cat-head h3 { font-size: 16px; margin: 0; }
+.ss-cat-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ss-cat-table th, .ss-cat-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.ss-cat-table th { background: var(--bg-main); font-size: 12px; color: var(--text-sub); }
+.ss-cat-ops { display: flex; gap: 4px; }
 
 @media (max-width: 768px) {
   .ss-tabs { overflow-x: auto; }

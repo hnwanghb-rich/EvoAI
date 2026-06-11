@@ -6,9 +6,10 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  references?: { title: string; id: number }[]
+  references?: { title: string; id: number; confidence?: number }[]
   timestamp: number
-  streaming?: boolean
+  source?: string
+  confidence?: number
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -24,14 +25,15 @@ export const useChatStore = defineStore('chat', () => {
     return null
   })
 
-  function addMessage(role: 'user' | 'assistant', content: string, refs?: { title: string; id: number }[]) {
+  function addMessage(role: 'user' | 'assistant', content: string, refs?: { title: string; id: number; confidence?: number }[], source?: string, confidence?: number) {
     const msg: ChatMessage = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       role,
       content,
       references: refs,
       timestamp: Date.now(),
-      streaming: false,
+      source,
+      confidence,
     }
     messages.value.push(msg)
     return msg
@@ -44,12 +46,11 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = true
 
     try {
-      // 用 axios GET 请求，参数走 query string
       const { data } = await axios.get('/api/chat/ask', {
         params: { question, mode: mode.value },
       })
       const d = data.data
-      addMessage('assistant', d.answer || data.msg || '(无响应)', d.references)
+      addMessage('assistant', d.answer || data.msg || '(无响应)', d.references, d.source, d.confidence)
     } catch (e: any) {
       const msg = e.response?.data?.detail || e.response?.data?.msg || e.message || '请求失败'
       addMessage('assistant', '抱歉，请求出错了：' + msg)
@@ -58,8 +59,12 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function clear() { messages.value = [] }
+  async function clearChat() {
+    messages.value = []
+    try { await axios.post('/api/chat/clear') } catch { /* ignore */ }
+  }
+
   function toggle() { open.value = !open.value }
 
-  return { messages, open, loading, mode, lastAssistantMsg, addMessage, sendMessage, clear, toggle }
+  return { messages, open, loading, mode, lastAssistantMsg, addMessage, sendMessage, clearChat, clear: clearChat, toggle }
 })
