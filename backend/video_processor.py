@@ -8,6 +8,8 @@ import uuid
 import hashlib
 import base64
 import logging
+import re
+import asyncio
 import subprocess
 import tempfile
 from datetime import datetime
@@ -28,6 +30,77 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
+# ═══════════════════════════════════════════════════════════════
+# ffmpeg/ffprobe 智能查找（Windows 兼容）
+# ═══════════════════════════════════════════════════════════════
+
+_FFMPEG_PATH = None
+_FFPROBE_PATH = None
+
+
+def _find_ffmpeg() -> str | None:
+    """查找 ffmpeg 可执行文件：先 PATH，再 winget 常见安装目录"""
+    global _FFMPEG_PATH
+    if _FFMPEG_PATH:
+        return _FFMPEG_PATH
+    _FFMPEG_PATH = _which("ffmpeg")
+    if _FFMPEG_PATH:
+        return _FFMPEG_PATH
+    for candidate in _winget_search("ffmpeg.exe"):
+        _FFMPEG_PATH = candidate
+        logger.info(f"找到 ffmpeg: {_FFMPEG_PATH}")
+        return _FFMPEG_PATH
+    logger.error("ffmpeg 未找到！请安装 ffmpeg: winget install BtbN.FFmpeg.GPL.8.1")
+    return None
+
+
+def _find_ffprobe() -> str | None:
+    """查找 ffprobe 可执行文件"""
+    global _FFPROBE_PATH
+    if _FFPROBE_PATH:
+        return _FFPROBE_PATH
+    _FFPROBE_PATH = _which("ffprobe")
+    if _FFPROBE_PATH:
+        return _FFPROBE_PATH
+    for candidate in _winget_search("ffprobe.exe"):
+        _FFPROBE_PATH = candidate
+        logger.info(f"找到 ffprobe: {_FFPROBE_PATH}")
+        return _FFPROBE_PATH
+    logger.error("ffprobe 未找到！请安装 ffmpeg: winget install BtbN.FFmpeg.GPL.8.1")
+    return None
+
+
+def _which(cmd: str) -> str | None:
+    """跨平台 which"""
+    import shutil
+    result = shutil.which(cmd)
+    if result:
+        if os.path.islink(result) or os.path.isfile(result):
+            return os.path.abspath(result)
+    return None
+
+
+def _winget_search(pattern: str) -> list[str]:
+    """在 winget 包目录下搜索可执行文件"""
+    results = []
+    packages_root = os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                                 "Microsoft", "WinGet", "Packages")
+    if not os.path.isdir(packages_root):
+        return results
+    for f_name in os.listdir(packages_root):
+        if "FFmpeg" not in f_name and "ffmpeg" not in f_name.lower():
+            continue
+        base = os.path.join(packages_root, f_name)
+        if not os.path.isdir(base):
+            continue
+        for root, _dirs, files in os.walk(base):
+            for f in files:
+                if f.lower() == pattern.lower():
+                    results.append(os.path.join(root, f))
+            if results:
+                break
+    return results
+
 
 async def process_video(
     video_path: str,
@@ -45,10 +118,10 @@ async def process_video(
     video_name = Path(video_path).stem
     base_title = title or video_name
 
-    # 1. 提取音频 → 临时 WAV 文件
-    audio_path = os.path.join(tempfile.gettempdir(), f"vocal_{uuid.uuid4().hex[:8]}.wav")
+    # 1. 提取音频 → 临时 MP3 文件（异步非阻塞）
+    audio_path = os.path.join(tempfile.gettempdir(), f"vocal_{uuid.uuid4().hex[:8]}.mp3")
     try:
-        _extract_audio(video_path, audio_path)
+        await _extract_audio_async(video_path, audio_path)
     except Exception as e:
         logger.warning(f"音频提取失败: {e}")
         # 无音频时：创建单条视频知识
@@ -79,23 +152,119 @@ async def process_video(
 
 
 def _extract_audio(video_path: str, output_wav: str):
-    """ffmpeg 提取音频 → 16kHz 单声道 WAV"""
+    """ffmpeg 提取音频 → 16kHz 单声道 WAV（同步版，兼容旧调用）"""
+    _run_ffmpeg_sync(video_path, output_wav)
+
+
+async def _extract_audio_async(
+    video_path: str,
+    output_path: str,
+    on_progress=None,
+) -> None:
+    """
+    ffmpeg 提取音频 → MP3 (libmp3lame) 异步非阻塞版。
+    使用线程池运行 ffmpeg，通过队列回调进度（兼容 Windows ProactorEventLoop）。
+    """
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg 未安装，无法提取音频。请执行: winget install BtbN.FFmpeg.GPL.8.1")
+
+    # 先异步获取视频时长（使用线程池 ffprobe）
+    vid_dur = await _get_audio_duration(video_path)
+
     cmd = [
-        "ffmpeg", "-i", video_path,
+        ffmpeg, "-i", video_path,
+        "-vn", "-acodec", "libmp3lame",
+        "-ar", "16000", "-ac", "1", "-b:a", "64k",
+        "-y", output_path,
+    ]
+
+    import queue
+    import threading
+
+    progress_q: queue.Queue = queue.Queue()
+
+    def _run_ffmpeg_thread():
+        """在独立线程中运行 ffmpeg，解析 stderr 上报进度"""
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,
+            )
+            last_pct = 0
+            # 读取 stderr 直到进程结束
+            for line_bytes in proc.stderr:
+                line = line_bytes.decode("utf-8", errors="ignore")
+                tm = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line)
+                if tm and vid_dur > 0 and on_progress:
+                    secs = int(tm.group(1)) * 3600 + int(tm.group(2)) * 60 + float(tm.group(3))
+                    pct = min(int(secs / vid_dur * 100), 99)
+                    if pct > last_pct + 4:
+                        last_pct = pct
+                        progress_q.put(("progress", pct, f"正在提取音频... {pct}%"))
+            proc.wait()
+            if proc.returncode != 0:
+                progress_q.put(("error", proc.returncode, f"ffmpeg exit code {proc.returncode}"))
+            else:
+                progress_q.put(("done", 100, "音频提取完成 ✓"))
+        except FileNotFoundError:
+            progress_q.put(("error", -1, f"找不到 ffmpeg: {ffmpeg}"))
+        except Exception as e:
+            progress_q.put(("error", -1, str(e)))
+
+    loop = asyncio.get_running_loop()
+    thread = threading.Thread(target=_run_ffmpeg_thread, daemon=True)
+    thread.start()
+
+    # 轮询线程进度队列
+    while thread.is_alive() or not progress_q.empty():
+        try:
+            msg = progress_q.get(timeout=0.3)
+            status = msg[0]
+            if status == "progress":
+                _, pct, detail = msg
+                if on_progress:
+                    on_progress(pct, detail)
+            elif status == "done":
+                _, pct, detail = msg
+                if on_progress:
+                    on_progress(pct, detail)
+                logger.info(f"音频提取完成: {output_path}")
+                return
+            elif status == "error":
+                _, code, detail = msg
+                raise subprocess.CalledProcessError(code, cmd, output=detail)
+        except queue.Empty:
+            await asyncio.sleep(0.3)
+
+    thread.join()
+    logger.info(f"音频提取完成: {output_path}")
+
+
+def _run_ffmpeg_sync(video_path: str, output_path: str):
+    """同步 ffmpeg 提取 WAV（旧接口兼容）"""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg 未安装")
+    cmd = [
+        ffmpeg, "-i", video_path,
         "-vn", "-acodec", "pcm_s16le",
         "-ar", "16000", "-ac", "1",
-        "-y", output_wav,
+        "-y", output_path,
     ]
     subprocess.run(cmd, capture_output=True, timeout=300, check=True)
-    logger.info(f"音频提取完成: {output_wav}")
+    logger.info(f"音频提取完成: {output_path}")
 
 
 async def _transcribe_with_timestamps(audio_path: str) -> list[dict]:
     """
-    ASR 三级回退：
+    ASR 四级回退：
     1. OpenAI Whisper 兼容 API（复用已配置的 LLM）
     2. 腾讯云 ASR（需单独配置 TENCENT_SECRET_ID/KEY）
-    3. 静态分段 pending（兜底，await 人工填写）
+    3. 本地 faster-whisper（CPU 离线转写，免费用）
+    4. 静态分段 pending（兜底，await 人工填写）
     返回: [{"start": float, "end": float, "text": str}, ...] 或空列表(兜底)
     """
     provider = ASR_PROVIDER or "openai_compatible"
@@ -120,8 +289,17 @@ async def _transcribe_with_timestamps(audio_path: str) -> list[dict]:
         except Exception as e:
             logger.warning(f"腾讯云 ASR 转写失败: {e}")
 
-    # Tier 3: 兜底 —— 返回空列表，上层用静态分段 pending
-    logger.warning("无可用 ASR，回退到静态分段(pending)")
+    # Tier 3: 本地 faster-whisper（离线、免费）
+    try:
+        result = await _transcribe_local_whisper(audio_path)
+        if result:
+            logger.info(f"本地 Whisper 转写完成: {len(result)} 段, {sum(len(s['text']) for s in result)} 字符")
+            return result
+    except Exception as e:
+        logger.warning(f"本地 Whisper 转写失败: {e}")
+
+    # Tier 4: 兜底 —— 返回空列表，上层用静态分段 pending
+    logger.warning("所有 ASR 均不可用，回退到静态分段(pending)")
     return []
 
 
@@ -197,6 +375,64 @@ async def _transcribe_openai_compatible(audio_path: str) -> list[dict] | None:
 
 
 # ═══════════════════════════════════════════════════════════════
+# 本地 faster-whisper 转写（离线 · 免费 · CPU）
+# ═══════════════════════════════════════════════════════════════
+
+_LOCAL_WHISPER_MODEL = None
+
+
+def _get_local_whisper():
+    """懒加载 faster-whisper 模型（首次调用自动下载 ~500MB）"""
+    global _LOCAL_WHISPER_MODEL
+    if _LOCAL_WHISPER_MODEL is None:
+        from faster_whisper import WhisperModel
+        # small 模型：中文识别精度好，CPU 上约 0.3x 实时（1分钟音频≈20秒转写）
+        logger.info("正在加载本地 Whisper 模型 (small)... 首次使用会自动下载 (~500MB)")
+        _LOCAL_WHISPER_MODEL = WhisperModel("small", device="cpu", compute_type="int8")
+        logger.info("本地 Whisper 模型加载完成")
+    return _LOCAL_WHISPER_MODEL
+
+
+async def _transcribe_local_whisper(audio_path: str) -> list[dict] | None:
+    """用本地 faster-whisper 离线转写，带时间戳"""
+    try:
+        model = await asyncio.to_thread(_get_local_whisper)
+        # 在线程池中执行转写（避免阻塞事件循环）
+        segments = await asyncio.to_thread(
+            _run_local_whisper, model, audio_path
+        )
+        return segments if segments else None
+    except FileNotFoundError:
+        logger.warning("本地 Whisper 模型文件未找到")
+        return None
+    except Exception as e:
+        logger.warning(f"本地 Whisper 转写异常: {type(e).__name__}: {e}")
+        return None
+
+
+def _run_local_whisper(model, audio_path: str) -> list[dict]:
+    """同步执行转写，在线程中运行"""
+    segments_out = []
+    # beam_size=3 精度更高，vad_filter=True 自动跳过静音
+    gen_segments, info = model.transcribe(
+        audio_path,
+        beam_size=3,
+        vad_filter=True,
+        language="zh",
+    )
+    logger.info(f"本地 Whisper 检测语言: {info.language} (概率 {info.language_probability:.2f})")
+    for seg in gen_segments:
+        text = seg.text.strip()
+        if text:
+            segments_out.append({
+                "start": round(seg.start, 2),
+                "end": round(seg.end, 2),
+                "text": text,
+            })
+    return segments_out
+
+
+# ═══════════════════════════════════════════════════════════════
 # 腾讯云 ASR 转写
 # ═══════════════════════════════════════════════════════════════
 
@@ -213,15 +449,7 @@ async def _transcribe_tencent(audio_path: str) -> list[dict] | None:
         return None
 
     # 获取音频时长
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-             "-of", "csv=p=0", audio_path],
-            capture_output=True, text=True, timeout=10,
-        )
-        duration = float(result.stdout.strip())
-    except Exception:
-        duration = 60
+    duration = await _get_audio_duration(audio_path)
 
     # 读取音频为 base64
     with open(audio_path, "rb") as f:
@@ -402,22 +630,45 @@ def _split_by_sentences(text: str, max_chars: int = 500) -> list[dict]:
     return segments
 
 
-def _get_audio_duration(audio_path: str) -> float:
-    """获取音频时长（秒）"""
+async def _get_duration_async(file_path: str) -> float:
+    """异步获取音/视频时长（秒），使用线程池运行 ffprobe 避免阻塞事件循环"""
+    ffprobe = _find_ffprobe()
+    if not ffprobe:
+        logger.warning("ffprobe 不可用，使用默认时长 60s")
+        return 60.0
+    log_msg = f"ffprobe [{ffprobe}] -> {file_path}"
     try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-             "-of", "csv=p=0", audio_path],
-            capture_output=True, text=True, timeout=10,
+        stdout = await asyncio.to_thread(
+            _run_ffprobe_sync, ffprobe, file_path
         )
-        return float(result.stdout.strip()) or 60
-    except Exception:
-        return 60
+        val = stdout.strip()
+        dur = float(val) if val else 60.0
+        logger.info(f"{log_msg} => {dur:.1f}s")
+        return dur if dur > 0 else 60.0
+    except Exception as e:
+        logger.warning(f"ffprobe 失败 ({type(e).__name__}: {e})")
+        return 60.0
 
 
-def _get_video_duration(video_path: str) -> float:
-    """获取视频时长（秒），从原视频而非音频获取"""
-    return _get_audio_duration(video_path)  # ffprobe 对视频同样可用
+def _run_ffprobe_sync(ffprobe_path: str, file_path: str) -> str:
+    """同步运行 ffprobe 获取时长"""
+    result = subprocess.run(
+        [ffprobe_path, "-v", "quiet", "-show_entries", "format=duration",
+         "-of", "csv=p=0", file_path],
+        capture_output=True, text=True, timeout=15,
+    )
+    result.check_returncode()
+    return result.stdout
+
+
+async def _get_audio_duration(audio_path: str) -> float:
+    """获取音频时长（秒）—— 异步版本"""
+    return await _get_duration_async(audio_path)
+
+
+async def _get_video_duration(video_path: str) -> float:
+    """获取视频时长（秒）—— 异步版本"""
+    return await _get_duration_async(video_path)
 
 
 def _static_segments(duration: float, audio_path: str = "") -> list[dict]:

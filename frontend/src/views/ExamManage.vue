@@ -27,7 +27,7 @@ const keyword = ref('')
 const showForm = ref(false)
 const editing = ref<Partial<QItem>>({})
 const isEdit = ref(false)
-const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服' }
+const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服', clerk: '文员', public: '公共' }
 
 // AI出题
 const showAI = ref(false)
@@ -137,13 +137,13 @@ onMounted(() => { fetchList(); fetchStats() })
       <div class="em-stat"><span class="ems-num">{{ stats.total }}</span><span class="ems-label">题目总数</span></div>
       <div class="em-stat"><span class="ems-num">{{ stats.avg_difficulty }}</span><span class="ems-label">平均难度</span></div>
       <div class="em-stat"><span class="ems-num">+{{ stats.recent_new }}</span><span class="ems-label">近7天新增</span></div>
-      <div class="em-stat"><span v-for="b in stats.by_position" :key="b.position" style="display:block;font-size:11px">{{ b.position || '公共' }}: {{ b.count }}题</span></div>
+      <div class="em-stat pos-breakdown"><span v-for="b in stats.by_position" :key="b.position">{{ posLabel[b.position] || b.position || '未知' }}：{{ b.count }} 题</span></div>
     </div>
 
     <!-- 筛选栏 -->
     <div class="em-tools">
       <input v-model="keyword" placeholder="搜索题目..." class="form-input" style="width:200px" @keydown.enter="search" />
-      <select v-model="posFilter" @change="search" class="form-input" style="width:auto"><option value="">全部岗位</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option><option value="">公共</option></select>
+      <select v-model="posFilter" @change="search" class="form-input" style="width:auto"><option value="">全部岗位</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option><option value="clerk">文员</option><option value="">公共</option></select>
       <select v-model="diffFilter" @change="search" class="form-input" style="width:auto"><option value="0">全部难度</option><option v-for="n in 5" :key="n" :value="n">{{ '★'.repeat(n) }}</option></select>
       <select v-model="typeFilter" @change="search" class="form-input" style="width:auto"><option value="">全部题型</option><option value="single_choice">单选</option><option value="multi_choice">多选</option><option value="true_false">判断</option><option value="fill_blank">填空</option></select>
       <button class="btn btn-sm" @click="search">搜索</button>
@@ -186,7 +186,7 @@ onMounted(() => { fetchList(); fetchStats() })
             <div class="form-group"><label>答案</label><input v-model="editing.answer" class="form-input" style="width:100%" placeholder="A/B/C/D 或 true/false 或填空答案" /></div>
             <div class="form-group"><label>解析</label><textarea v-model="editing.explanation" class="form-input" style="width:100%;min-height:60px"></textarea></div>
             <div class="form-row">
-              <div class="form-group"><label>目标岗位</label><select v-model="editing.target_position" class="form-input" style="width:100%"><option value="">公共(全员)</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option></select></div>
+              <div class="form-group"><label>目标岗位</label><select v-model="editing.target_position" class="form-input" style="width:100%"><option value="">公共(全员)</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option><option value="clerk">文员</option></select></div>
               <div class="form-group"><label>难度(1-5)</label><input v-model.number="editing.difficulty_level" type="number" min="1" max="5" class="form-input" style="width:80px" /></div>
             </div>
           </div>
@@ -226,8 +226,10 @@ onMounted(() => { fetchList(); fetchStats() })
 .em-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .em-actions { display: flex; gap: 8px; }
 
-.em-stats { display: flex; gap: 16px; margin-bottom: 16px; }
-.em-stat { text-align: center; padding: 12px 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; }
+.em-stats { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.em-stat { text-align: center; padding: 12px 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; min-width: 100px; }
+.em-stat.pos-breakdown { min-width: 140px; text-align: left; }
+.em-stat.pos-breakdown span { display: block; font-size: 13px; line-height: 1.8; }
 .ems-num { display: block; font-size: 24px; font-weight: 700; color: var(--primary); }
 .ems-label { font-size: 11px; color: var(--text-sub); }
 

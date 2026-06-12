@@ -447,7 +447,7 @@ onMounted(async () => {
             <div style="display:flex;gap:10px;margin-bottom:10px;align-items:flex-end">
               <div class="form-group" style="flex:1"><label>选择文件（PDF/Word/Excel/视频/音频）</label><input type="file" accept=".pdf,.docx,.xlsx,.mp4,.webm,.mp3,.wav" @change="onFileChange" class="form-input" style="width:100%" /></div>
               <div class="form-group" style="width:110px"><label>目标岗位</label><select v-model="editing.knowledge_base" class="form-input" style="width:100%"><option value="public">公共</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option></select></div>
-              <div class="form-group" style="width:160px"><label>目标分类</label><select v-model="editing.category_id" class="form-input" style="width:100%"><option :value="0">自动匹配</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.name }}</option></select></div>
+              <div class="form-group" style="width:160px"><label>目标分类</label><select v-model="editing.category_id" class="form-input" style="width:100%"><option :value="0">自动匹配</option><option v-for="c in categories.filter(x => x.knowledge_base === editing.knowledge_base)" :key="c.id" :value="c.id">{{ c.icon }} {{ c.name }}</option></select></div>
               <div class="form-group"><button class="btn" @click="smartImport" :disabled="!importFile || importLoading" style="padding:10px 20px;font-size:14px;white-space:nowrap">
                 {{ importLoading ? '⏳ 解析中...' : '📄 解析上传文件' }}
               </button></div>

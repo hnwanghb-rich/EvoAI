@@ -20,7 +20,7 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE user_position_enum AS ENUM ('sales', 'tech', 'service');
+    CREATE TYPE user_position_enum AS ENUM ('sales', 'tech', 'service', 'clerk');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 

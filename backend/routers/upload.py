@@ -1,5 +1,5 @@
 """File upload + smart import router"""
-import os, io, uuid, json, logging, hashlib, base64, re, time as _time
+import os, io, uuid, json, logging, hashlib, base64, re, time as _time, tempfile
 from pathlib import Path
 
 import httpx
@@ -21,6 +21,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 ALLOWED_EXT = {".pdf", ".docx", ".xlsx", ".jpg", ".jpeg", ".png", ".mp4", ".mp3", ".wav", ".webm"}
 
+
+def _safe_filename(raw_name: str) -> str:
+    """
+    修复 Windows 上 GBK 中文文件名被 Starlette 误当 Latin-1 解码的问题。
+    "ÏúÊÛ¾­Àí¼Ý..." → "销售经理驾驶..."
+    如果文件名正常则原样返回。
+    """
+    if not raw_name:
+        return raw_name
+    # 试探：所有字节是否在 cp1252 可逆范围内
+    try:
+        raw_bytes = raw_name.encode("cp1252")
+    except UnicodeEncodeError:
+        # 已含非 Latin-1 字符 → UTF-8 文件名，正常
+        return raw_name
+    # 用 GBK 解码这些字节 → 命中的话就是中文恢复成功
+    try:
+        decoded = raw_bytes.decode("gbk")
+        cn_count = sum(1 for c in decoded if '一' <= c <= '鿿')
+        if cn_count >= 2:
+            logger.info(f"_safe_filename 恢复中文: {raw_name!r} -> {decoded!r}")
+            return decoded
+    except UnicodeDecodeError:
+        pass
+    return raw_name
+
 _ocr_engine = None
 def _get_ocr():
     global _ocr_engine
@@ -32,7 +58,8 @@ def _get_ocr():
 
 @router.post("/upload/file", response_model=ApiResponse)
 async def upload_file(file: UploadFile = File(...), _admin: User = Depends(require_admin)):
-    suffix = Path(file.filename).suffix.lower()
+    safe_name_raw = _safe_filename(file.filename)
+    suffix = Path(safe_name_raw).suffix.lower()
     if suffix not in ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Unsupported type: {suffix}")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -44,7 +71,7 @@ async def upload_file(file: UploadFile = File(...), _admin: User = Depends(requi
     if suffix == ".pdf": text = _parse_pdf(save_path)
     elif suffix == ".docx": text = _parse_docx(save_path)
     elif suffix == ".xlsx": text = _parse_xlsx(save_path)
-    return ApiResponse(data={"filename": safe_name, "original_name": file.filename, "size": len(content), "extracted_text": text, "url": f"/uploads/{safe_name}"})
+    return ApiResponse(data={"filename": safe_name, "original_name": safe_name_raw, "size": len(content), "extracted_text": text, "url": f"/uploads/{safe_name}"})
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -74,22 +101,27 @@ async def video_import_stream(
 ):
     """视频智能导入 SSE 流 —— 实时推送每一步进度和预估剩余时间"""
 
+    # ── 在生成器外部完成文件保存（避免生成器内 SpooledTemporaryFile 被关闭） ──
+    safe_name_raw = _safe_filename(file.filename)
+    suffix = Path(safe_name_raw).suffix.lower()
+    if suffix not in (".mp4", ".webm", ".mp3", ".wav"):
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {suffix}")
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    safe_name = f"{uuid.uuid4().hex}{suffix}"
+    save_path = os.path.join(UPLOAD_DIR, safe_name)
+    content = await file.read()
+    file_size_mb = len(content) / 1024 / 1024
+    with open(save_path, "wb") as f:
+        f.write(content)
+    base_title = Path(safe_name_raw).stem
+    # 在 session 有效期内读取 user.dept（避免生成器内 DetachedInstanceError）
+    source_dept = user.dept.name if user.dept else ""
+    logger.info(f"[SSE] file saved: {safe_name} ({file_size_mb:.1f}MB), starting SSE stream")
+
     async def generate():
         t0 = _time.time()
 
-        # ── Step 1: 保存文件 ──
-        yield _sse_fmt("progress", {"step": "save", "detail": "正在保存文件...", "pct": 3})
-        suffix = Path(file.filename).suffix.lower()
-        if suffix not in (".mp4", ".webm", ".mp3", ".wav"):
-            yield _sse_fmt("error", {"detail": f"不支持的文件类型: {suffix}"})
-            return
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        safe_name = f"{uuid.uuid4().hex}{suffix}"
-        save_path = os.path.join(UPLOAD_DIR, safe_name)
-        content = await file.read()
-        file_size_mb = len(content) / 1024 / 1024
-        with open(save_path, "wb") as f:
-            f.write(content)
+        # ── Step 1: 文件已保存 ──
         yield _sse_fmt("progress", {
             "step": "save_done", "detail": f"文件已保存 ({file_size_mb:.1f}MB)",
             "pct": 5, "elapsed_sec": _time.time() - t0,
@@ -97,10 +129,10 @@ async def video_import_stream(
 
         # ── Step 2: 获取视频时长 + 预估总耗时 ──
         from video_processor import (
-            _extract_audio, _transcribe_with_timestamps, _create_segments,
+            _extract_audio_async, _transcribe_with_timestamps, _create_segments,
             _create_single_entry, _get_video_duration, _format_ts,
         )
-        vid_dur = _get_video_duration(save_path)
+        vid_dur = await _get_video_duration(save_path)
         # 预估公式：ffmpeg(dur*0.25) + ASR(dur*0.7) + AI(15s) + 开销(8s)
         est_total = max(vid_dur * 0.95 + 23, 20)
         yield _sse_fmt("progress", {
@@ -136,17 +168,46 @@ async def video_import_stream(
             "pct": 12, "category": cat_info,
         })
 
-        base_title = Path(file.filename).stem
-        source_dept = user.dept.name if user.dept else ""
-
-        # ── Step 4: 提取音频 ──
+        # ── Step 4: 提取音频（后台异步任务 + 循环 yield 进度）──
         yield _sse_fmt("progress", {
             "step": "audio_extract", "detail": "正在提取音频（ffmpeg）...",
             "pct": 15, "elapsed_sec": round(_time.time() - t0, 1),
         })
-        audio_path = os.path.join(tempfile.gettempdir(), f"vocal_{uuid.uuid4().hex[:8]}.wav")
+        audio_path = os.path.join(tempfile.gettempdir(), f"vocal_{uuid.uuid4().hex[:8]}.mp3")
+        import asyncio as _asyncio
+        _progress_q: _asyncio.Queue = _asyncio.Queue()
+        def _audio_cb(pct: float, detail: str):
+            _progress_q.put_nowait((pct, detail))
+        _audio_task = _asyncio.ensure_future(
+            _extract_audio_async(save_path, audio_path, on_progress=_audio_cb)
+        )
         try:
-            _extract_audio(save_path, audio_path)
+            last_fwd_pct = 15
+            while not _audio_task.done():
+                # 排空进度队列
+                while not _progress_q.empty():
+                    pct, detail = _progress_q.get_nowait()
+                    mapped = 15 + int(pct * 0.15)
+                    if mapped > last_fwd_pct + 1:
+                        last_fwd_pct = mapped
+                        yield _sse_fmt("progress", {
+                            "step": "audio_extract", "detail": detail,
+                            "pct": min(mapped, 29),
+                            "elapsed_sec": round(_time.time() - t0, 1),
+                        })
+                await _asyncio.sleep(0.5)  # 0.5s 轮询，不烧 CPU
+            # 清空剩余事件
+            while not _progress_q.empty():
+                pct, detail = _progress_q.get_nowait()
+                mapped = 15 + int(pct * 0.15)
+                if mapped > last_fwd_pct:
+                    last_fwd_pct = mapped
+                    yield _sse_fmt("progress", {
+                        "step": "audio_extract", "detail": detail,
+                        "pct": min(mapped, 29),
+                        "elapsed_sec": round(_time.time() - t0, 1),
+                    })
+            await _audio_task  # 拿到异常（如果有）
             yield _sse_fmt("progress", {
                 "step": "audio_done", "detail": "音频提取完成 ✓",
                 "pct": 30, "elapsed_sec": round(_time.time() - t0, 1),
@@ -186,7 +247,7 @@ async def video_import_stream(
                 "pct": 60, "elapsed_sec": el,
             })
             from video_processor import _get_audio_duration, _static_segments
-            dur = _get_audio_duration(audio_path)
+            dur = await _get_audio_duration(audio_path)
             segments = _static_segments(dur)
             seg_status = EntryStatusEnum.pending
         else:
@@ -293,7 +354,8 @@ async def smart_import(
     result = {"knowledge_id": None, "question_ids": [], "category_matched": None}
 
     # Step 1: save file
-    suffix = Path(file.filename).suffix.lower()
+    safe_name_raw = _safe_filename(file.filename)
+    suffix = Path(safe_name_raw).suffix.lower()
     if suffix not in ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"不支持的文件类型：{suffix}")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -351,7 +413,7 @@ async def smart_import(
                 video_path=save_path,
                 category_id=vid_cat.id,
                 knowledge_base=vid_cat.knowledge_base.value,
-                title=Path(file.filename).stem,
+                title=Path(safe_name_raw).stem,
                 source_person=user.real_name,
                 source_dept=user.dept.name if user.dept else "",
                 tags=f"批量导入,{vid_cat.name}",
@@ -452,7 +514,7 @@ async def smart_import(
     try:
         async with async_session() as db:
             ke = KnowledgeEntry(
-                title=Path(file.filename).stem, content=text[:10000],
+                title=Path(safe_name_raw).stem, content=text[:10000],
                 content_type=ContentTypeEnum.text, category_id=matched_cat.id,
                 knowledge_base=matched_cat.knowledge_base.value,
                 source_type=SourceTypeEnum.manual, source_file_path=save_path,

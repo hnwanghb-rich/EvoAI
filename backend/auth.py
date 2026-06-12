@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from config import JWT_SECRET, JWT_EXPIRE_MINUTES
 from database import get_db, async_session
@@ -50,12 +51,16 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="无效的登录凭证")
 
     async with async_session() as db:
-        result = await db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(
+            select(User).options(selectinload(User.dept)).where(User.id == user_id)
+        )
         user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=401, detail="用户不存在或已被删除")
         if user.status != 1:
             raise HTTPException(status_code=403, detail="账号已被停用")
+        # 触发 dept 加载（在 session 关闭前缓存到实例）
+        _ = user.dept if user.dept else None
         return user
 
 

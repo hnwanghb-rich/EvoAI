@@ -31,6 +31,7 @@ class UserPositionEnum(str, enum.Enum):
     sales = "sales"
     tech = "tech"
     service = "service"
+    clerk = "clerk"
 
 
 class KnowledgeBaseEnum(str, enum.Enum):

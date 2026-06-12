@@ -57,6 +57,7 @@ async def _seed_departments(db):
         Department(name="销售部"),
         Department(name="技术部"),
         Department(name="客服部"),
+        Department(name="行政部"),
     ]
     db.add_all(depts)
     logger.info("  部门: 3 条")
@@ -158,6 +159,14 @@ async def _seed_users(db):
             role=UserRoleEnum.staff,
             position=UserPositionEnum.service,
             dept_id=depts.get("客服部"),
+        ),
+        User(
+            username="clerk01",
+            real_name="刘文员",
+            password_hash=pwd_context.hash(DEFAULT_PASSWORD),
+            role=UserRoleEnum.staff,
+            position=UserPositionEnum.clerk,
+            dept_id=depts.get("行政部"),
         ),
     ]
     db.add_all(users)

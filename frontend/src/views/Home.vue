@@ -59,7 +59,7 @@ function formatDuration(sec: number): string {
   return Math.round(sec / 60) + '分钟'
 }
 
-const posLabels: Record<string, string> = { sales: '销售', tech: '技术', service: '客服' }
+const posLabels: Record<string, string> = { sales: '销售', tech: '技术', service: '客服', clerk: '文员' }
 
 onMounted(fetchHome)
 </script>

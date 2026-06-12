@@ -22,7 +22,7 @@ const editing = ref<any>({})
 const isEdit = ref(false)
 
 const roleLabel: Record<string, string> = { boss: '老板', admin: '管理员', staff: '职员' }
-const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服' }
+const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服', clerk: '文员' }
 
 async function fetchList() {
   loading.value = true
@@ -102,6 +102,7 @@ onMounted(fetchList)
         <option value="sales">销售</option>
         <option value="tech">技术</option>
         <option value="service">客服</option>
+        <option value="clerk">文员</option>
       </select>
       <button class="btn btn-sm" @click="search">搜索</button>
     </div>
@@ -184,6 +185,7 @@ onMounted(fetchList)
                   <option value="sales">销售</option>
                   <option value="tech">技术</option>
                   <option value="service">客服</option>
+                  <option value="clerk">文员</option>
                 </select>
               </div>
             </div>
