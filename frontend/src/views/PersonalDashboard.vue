@@ -8,7 +8,7 @@ import RadarChart from '@/components/RadarChart.vue'
 const router = useRouter()
 const auth = useAuthStore()
 
-interface RadarItem { category_id: number; category_name: string; icon: string | null; mastery: number; learned: number; total: number; expected: number }
+interface RadarItem { category_id: number; category_name: string; icon: string | null; description: string; mastery: number; learned: number; total: number; expected: number }
 interface WeakItem { category_id: number; category_name: string; icon: string | null; mastery: number }
 interface RecentItem { id: number; knowledge_id: number; learn_type: string; knowledge_title: string; created_at: string | null }
 

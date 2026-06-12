@@ -127,13 +127,44 @@ async def answer_question(
         is_correct = user_answer.strip().lower() == q.answer.strip().lower()
         score = 100 if is_correct else 0
 
-        # 学习记录
-        db.add(LearningRecord(
-            user_id=user.id,
-            knowledge_id=q.related_knowledge_id or 1,
-            learn_type="test",
-            score=score,
-        ))
+        # 学习记录：优先用 related_knowledge_id，否则按 category_id 查找知识条目
+        kid = q.related_knowledge_id
+        if not kid and q.category_id:
+            entry_r = await db.execute(
+                select(KnowledgeEntry.id).where(
+                    KnowledgeEntry.category_id == q.category_id,
+                    KnowledgeEntry.status == "approved",
+                ).limit(1)
+            )
+            kid_row = entry_r.scalar_one_or_none()
+            kid = kid_row or None
+        # 兜底1：按题目的 target_position 匹配知识库（如 sales→销售知识库）
+        if not kid and q.target_position:
+            kb = q.target_position.value
+            fallback_r = await db.execute(
+                select(KnowledgeEntry.id).where(
+                    KnowledgeEntry.status == "approved",
+                    KnowledgeEntry.knowledge_base == kb,
+                ).limit(1)
+            )
+            fbr = fallback_r.scalar_one_or_none()
+            kid = fbr or None
+        # 兜底2：找任意一条已批准的知识条目
+        if not kid:
+            fallback_r = await db.execute(
+                select(KnowledgeEntry.id).where(
+                    KnowledgeEntry.status == "approved",
+                ).limit(1)
+            )
+            fbr = fallback_r.scalar_one_or_none()
+            kid = fbr or None
+        if kid:
+            db.add(LearningRecord(
+                user_id=user.id,
+                knowledge_id=kid,
+                learn_type="test",
+                score=score,
+            ))
 
         # 答对+1积分
         if is_correct:
@@ -386,14 +417,12 @@ async def batch_ai_generate(
     _admin: User = Depends(require_admin),
 ):
     """
-    AI批量出题：POST body JSON: {"content_text":"大段文本...","target_position":"sales","count":10}
+    AI批量出题：POST body JSON: {"content_text":"大段文本...","target_position":"sales","count":0}
+    count=0 表示由AI根据内容自行判断出题数量。
     LLM分析大段文本内容 → 拆解知识点 → 生成多道题目 → 直接入库
     """
     content_text = body.content_text
     target_position = body.target_position
-    count = body.count
-    if not content_text.strip():
-        raise HTTPException(status_code=400, detail="请输入文本内容")
     if not content_text.strip():
         raise HTTPException(status_code=400, detail="请输入文本内容")
 
@@ -408,7 +437,7 @@ async def batch_ai_generate(
 
         generated = []
         if llm and llm.api_key:
-            generated = await _call_llm_batch_generate(llm, content_text, target_position, count)
+            generated = await _call_llm_batch_generate(llm, content_text, target_position)
 
         if not generated:
             return ApiResponse(
@@ -449,6 +478,8 @@ async def batch_import_questions(
                     explanation=str(q.get("explanation", ""))[:2000],
                     target_position=q.get("target_position") or None,
                     difficulty_level=int(q.get("difficulty_level") or 2),
+                    related_knowledge_id=q.get("related_knowledge_id") or None,
+                    category_id=q.get("category_id") or None,
                 )
                 db.add(dq)
                 inserted += 1
@@ -459,7 +490,7 @@ async def batch_import_questions(
     return ApiResponse(data={"inserted": inserted}, msg=f"已入库 {inserted} 道题目")
 
 
-async def _call_llm_batch_generate(llm, content_text: str, target_position: str, count: int) -> list:
+async def _call_llm_batch_generate(llm, content_text: str, target_position: str) -> list:
     """调用LLM对大段文本分析拆解，批量出题"""
     import httpx
     from cryptography.fernet import Fernet
@@ -468,7 +499,7 @@ async def _call_llm_batch_generate(llm, content_text: str, target_position: str,
 
     pos_label = {"sales": "销售", "tech": "技术", "service": "客服"}.get(target_position, "通用")
 
-    prompt = f"""你是合群汽车集团知识库的出题专家。请仔细阅读以下文档内容，分析关键知识点，生成{count}道考题。
+    prompt = f"""你是合群汽车集团知识库的出题专家。请仔细阅读以下文档内容，根据内容实际含有的知识点数量，拆分出1-3道题目即可。内容少、知识点单一的只出1题；内容较丰富的出2-3题。严禁为了凑数生成重复、浅显或无意义的题目。
 
 目标岗位：{pos_label}
 文档内容：

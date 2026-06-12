@@ -33,8 +33,8 @@ LLM_ENCRYPTION_KEY = os.getenv(
     "hqevoai-llm-encryption-key-change-me"
 )
 
-# 语音转写
-ASR_PROVIDER = os.getenv("ASR_PROVIDER", "tencent")  # tencent / tongyi / dify
+# 语音转写（openai_compatible=复用LLM配置的Whisper API, tencent/tongyi/dify=独立ASR）
+ASR_PROVIDER = os.getenv("ASR_PROVIDER", "openai_compatible")
 TENCENT_SECRET_ID = os.getenv("TENCENT_SECRET_ID", "")
 TENCENT_SECRET_KEY = os.getenv("TENCENT_SECRET_KEY", "")
 TENCENT_ASR_APP_ID = os.getenv("TENCENT_ASR_APP_ID", "")

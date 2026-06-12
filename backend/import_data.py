@@ -114,47 +114,53 @@ async def batch_import():
                         stats["skipped"] += 1
                         stats["errors"].append(f"{fname}: 无法提取文本")
 
-                # 视频：创建视频条目
-                elif suffix in (".mp4", ".webm"):
-                    async with async_session() as db:
-                        entry = KnowledgeEntry(
-                            title=title,
-                            content=f"视频文件：{fname}（位于 {dir_name}）\n\n请注意：视频内容需通过语音转写生成文字版，当前为原始文件记录。",
-                            content_type=ContentTypeEnum.video,
+                # 视频/音频：委托 video_processor 转写+分段入库
+                elif suffix in (".mp4", ".webm", ".mp3", ".wav"):
+                    try:
+                        from video_processor import process_video
+                        entry_ids = await process_video(
+                            video_path=filepath,
                             category_id=default_cat_id,
                             knowledge_base=kb,
-                            source_type=SourceTypeEnum.video,
-                            source_file_path=filepath,
-                            source_person="系统导入",
-                            tags=f"批量导入,视频,{dir_name}",
-                            status=EntryStatusEnum.approved,
-                        )
-                        db.add(entry)
-                        await db.commit()
-                        await db.refresh(entry)
-                        stats["items"].append({"title": title, "file": fname, "type": "video"})
-                    stats["success"] += 1
-
-                # 音频：创建音频条目
-                elif suffix in (".mp3", ".wav"):
-                    async with async_session() as db:
-                        entry = KnowledgeEntry(
                             title=title,
-                            content=f"音频文件：{fname}（位于 {dir_name}）\n\n请注意：音频内容需通过语音转写生成文字版，当前为原始文件记录。",
-                            content_type=ContentTypeEnum.audio,
-                            category_id=default_cat_id,
-                            knowledge_base=kb,
-                            source_type=SourceTypeEnum.audio,
-                            source_file_path=filepath,
                             source_person="系统导入",
-                            tags=f"批量导入,音频,{dir_name}",
-                            status=EntryStatusEnum.approved,
+                            source_dept=dir_name,
+                            tags=f"批量导入,{dir_name}",
                         )
-                        db.add(entry)
-                        await db.commit()
-                        await db.refresh(entry)
-                        stats["items"].append({"title": title, "file": fname, "type": "audio"})
-                    stats["success"] += 1
+                        if entry_ids:
+                            stats["success"] += 1
+                            mtype = "video" if suffix in (".mp4", ".webm") else "audio"
+                            for eid in entry_ids:
+                                stats["items"].append({
+                                    "title": title, "file": fname,
+                                    "type": mtype, "entry_id": eid,
+                                })
+                        else:
+                            stats["skipped"] += 1
+                            stats["errors"].append(f"{fname}: 视频/音频转写失败(无可用ASR)")
+                    except Exception as e:
+                        stats["errors"].append(f"{fname}: 视频/音频处理异常 - {str(e)[:100]}")
+                        stats["skipped"] += 1
+                        # 回退：写一条 pending 占位条目
+                        try:
+                            async with async_session() as db:
+                                ct = ContentTypeEnum.video if suffix in (".mp4", ".webm") else ContentTypeEnum.audio
+                                entry = KnowledgeEntry(
+                                    title=title,
+                                    content=f"[处理失败: {str(e)[:200]}] 文件: {fname}",
+                                    content_type=ct,
+                                    category_id=default_cat_id,
+                                    knowledge_base=kb,
+                                    source_type=SourceTypeEnum.video if suffix in (".mp4", ".webm") else SourceTypeEnum.audio,
+                                    source_file_path=filepath,
+                                    source_person="系统导入",
+                                    tags=f"批量导入,{dir_name}",
+                                    status=EntryStatusEnum.pending,
+                                )
+                                db.add(entry)
+                                await db.commit()
+                        except Exception:
+                            pass
 
                 # 图片：创建图片条目
                 elif suffix in (".jpg", ".jpeg", ".png"):

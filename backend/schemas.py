@@ -197,7 +197,7 @@ class SettingUpdate(BaseModel):
 class BatchAIQuestionRequest(BaseModel):
     content_text: str = Field(..., max_length=50000)
     target_position: str = ""
-    count: int = Field(default=5, ge=1, le=20)
+    count: int = Field(default=0, ge=0, le=50)
 
 
 class BatchQuestionImport(BaseModel):

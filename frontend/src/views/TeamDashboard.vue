@@ -4,7 +4,7 @@ import axios from 'axios'
 import RadarChart from '@/components/RadarChart.vue'
 
 interface MemberRank { user_id: number; real_name: string; position: string; points: number }
-interface RadarItem { category_id: number; category_name: string; icon: string | null; mastery: number; expected: number }
+interface RadarItem { category_id: number; category_name: string; icon: string | null; description: string; mastery: number; expected: number }
 
 const loading = ref(true)
 const deptName = ref('')

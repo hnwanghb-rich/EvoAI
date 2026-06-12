@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS knowledge_categories (
     knowledge_base knowledge_base_enum NOT NULL,
     sort_order INT DEFAULT 0,
     icon VARCHAR(50),
+    description VARCHAR(200),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     FOREIGN KEY (parent_id) REFERENCES knowledge_categories(id) ON DELETE SET NULL
 );
@@ -212,9 +213,12 @@ CREATE TABLE IF NOT EXISTS daily_questions (
     target_position user_position_enum,
     difficulty_level SMALLINT DEFAULT 1 CHECK (difficulty_level BETWEEN 1 AND 5),
     related_knowledge_id BIGINT,
+    category_id INT,
+    tags VARCHAR(500),
     push_date DATE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    FOREIGN KEY (related_knowledge_id) REFERENCES knowledge_entries(id) ON DELETE SET NULL
+    FOREIGN KEY (related_knowledge_id) REFERENCES knowledge_entries(id) ON DELETE SET NULL,
+    FOREIGN KEY (category_id) REFERENCES knowledge_categories(id) ON DELETE SET NULL
 );
 
 -- A.11 对话日志表

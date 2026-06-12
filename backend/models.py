@@ -166,6 +166,7 @@ class KnowledgeCategory(Base):
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     # 自引用：避开 Python 3.14 Mapped[Optional["KnowledgeCategory"]] bug

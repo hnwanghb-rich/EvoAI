@@ -49,24 +49,135 @@ const aiQuestionResult = ref('')
 const questionTotal = ref(0)
 const confirmDone = ref(false)  // 入库完成后显示最终结果
 
-// 解析上传文件（停在第4步，不做AI拆题）
+// 视频导入进度（SSE 流式）
+const videoProgressPct = ref(0)
+const videoProgressStep = ref('')
+const videoProgressDetail = ref('')
+const videoProgressElapsed = ref(0)
+const videoProgressEstTotal = ref(0)
+
+function formatDuration(sec: number): string {
+  if (sec <= 0) return '--'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return m > 0 ? `${m}分${s}秒` : `${s}秒`
+}
+
+// 解析上传文件（先检测是否结构化试题 → 是则直接解析，否则需用户手动点AI拆分）
 async function smartImport() {
   if (!importFile.value || !auth.token) return
+  const isVideo = /\.(mp4|webm|mp3|wav)$/i.test(importFile.value.name)
+  if (isVideo) {
+    return smartImportVideo()
+  }
   importLoading.value = true; importDone.value = false; showReview.value = false; confirmDone.value = false
-  importSteps.value = []; aiQuestionResult.value = ''; draftQuestions.value = []; importText.value = ''
+  importSteps.value = []; aiQuestionResult.value = ''; draftQuestions.value = []; importText.value = ''; videoProgressPct.value = 0
   try {
     const fd = new FormData(); fd.append('file', importFile.value)
     fd.append('category_id', String(editing.value.category_id || 0))
     fd.append('knowledge_base', editing.value.knowledge_base || 'public')
-    fd.append('question_count', '0')  // 设为0，不让后端自动拆题
+    fd.append('question_count', '0')  // 设为0，不触发AI自动拆分
     const { data } = await axios.post('/api/upload/smart-import', fd)
     const d = data.data
     importSteps.value = d.steps || []
     importText.value = d.extracted_text || ''
+
+    // 检测到结构化试题 → 直接进复核面板，无需手动点AI拆分
+    if (d.direct_parse && d.drafts?.length) {
+      draftQuestions.value = d.drafts.map((q: any) => ({
+        ...q, question_type: q.question_type || 'single_choice',
+        options: q.options && typeof q.options === 'object' ? q.options : {A:'',B:'',C:'',D:''},
+        answer: q.answer || 'A', difficulty_level: q.difficulty_level || 2, _selected: true,
+      }))
+      showReview.value = true
+    }
     importDone.value = true
   } catch (e: any) {
     importSteps.value = [{ step: 'error', status: 'fail', detail: '❌ ' + (e.response?.data?.detail || e.message) }]
   } finally { importLoading.value = false }
+}
+
+// 视频 SSE 流式导入 —— 实时进度条 + 预估时间
+async function smartImportVideo() {
+  if (!importFile.value || !auth.token) return
+  importLoading.value = true; importDone.value = false; showReview.value = false; confirmDone.value = false
+  importSteps.value = []; aiQuestionResult.value = ''; draftQuestions.value = []; importText.value = ''
+  videoProgressPct.value = 0; videoProgressStep.value = ''; videoProgressDetail.value = ''
+  videoProgressElapsed.value = 0; videoProgressEstTotal.value = 0
+
+  const fd = new FormData(); fd.append('file', importFile.value)
+  fd.append('category_id', String(editing.value.category_id || 0))
+  fd.append('knowledge_base', editing.value.knowledge_base || 'public')
+
+  try {
+    const resp = await fetch('/api/upload/video-import-stream', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${auth.token}` },
+      body: fd,
+    })
+    if (!resp.ok) {
+      const txt = await resp.text()
+      importSteps.value = [{ step: 'error', status: 'fail', detail: '❌ ' + txt }]
+      importLoading.value = false
+      return
+    }
+
+    const reader = resp.body!.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    let done = false
+
+    while (!done) {
+      const result = await reader.read()
+      done = result.done
+      buf += decoder.decode(result.value, { stream: !done })
+
+      // 解析 SSE 事件
+      const lines = buf.split('\n')
+      buf = lines.pop() || ''
+      let eventType = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim()
+        } else if (line.startsWith('data: ') && eventType) {
+          try {
+            const evt = JSON.parse(line.slice(6))
+            handleSSEEvent(eventType, evt)
+          } catch { /* skip malformed */ }
+          eventType = ''
+        }
+      }
+    }
+  } catch (e: any) {
+    importSteps.value = [{ step: 'error', status: 'fail', detail: '❌ 连接中断: ' + (e.message || '未知') }]
+  } finally {
+    importLoading.value = false
+  }
+}
+
+function handleSSEEvent(type: string, evt: any) {
+  if (type === 'progress') {
+    videoProgressStep.value = evt.step || ''
+    videoProgressDetail.value = evt.detail || ''
+    videoProgressPct.value = evt.pct || videoProgressPct.value
+    videoProgressElapsed.value = evt.elapsed_sec || videoProgressElapsed.value
+    videoProgressEstTotal.value = evt.estimated_total_sec || videoProgressEstTotal.value
+    importSteps.value.push({ step: evt.step || 'progress', status: 'ok', detail: evt.detail || '' })
+  } else if (type === 'done') {
+    videoProgressPct.value = 100
+    importSteps.value.push({ step: 'done', status: 'ok', detail: evt.message || '处理完成' })
+    if (evt.drafts?.length) {
+      draftQuestions.value = evt.drafts.map((q: any) => ({
+        ...q, question_type: q.question_type || 'single_choice',
+        options: q.options && typeof q.options === 'object' ? q.options : {A:'',B:'',C:'',D:''},
+        answer: q.answer || 'A', difficulty_level: q.difficulty_level || 2, _selected: true,
+      }))
+      showReview.value = true
+    }
+    importDone.value = true
+  } else if (type === 'error') {
+    importSteps.value.push({ step: 'error', status: 'fail', detail: '❌ ' + (evt.detail || '未知错误') })
+  }
 }
 
 // AI 拆分 —— 对已解析的文案执行拆题
@@ -78,7 +189,7 @@ async function aiSplitOnly() {
     const { data } = await axios.post('/api/questions/batch-ai-generate', {
       content_text: importText.value,
       target_position: editing.value.knowledge_base === 'sales' ? 'sales' : editing.value.knowledge_base === 'tech' ? 'tech' : editing.value.knowledge_base === 'service' ? 'service' : '',
-      count: 10,
+      count: 0,  // 0=AI自行判断出题数量
     })
     if (data.code === 0 && data.data.drafts?.length) {
       draftQuestions.value = data.data.drafts.map((q: any) => ({
@@ -334,7 +445,7 @@ onMounted(async () => {
 
             <!-- 选择文件 + 解析 -->
             <div style="display:flex;gap:10px;margin-bottom:10px;align-items:flex-end">
-              <div class="form-group" style="flex:1"><label>选择文件（PDF/Word/Excel）</label><input type="file" accept=".pdf,.docx,.xlsx" @change="onFileChange" class="form-input" style="width:100%" /></div>
+              <div class="form-group" style="flex:1"><label>选择文件（PDF/Word/Excel/视频/音频）</label><input type="file" accept=".pdf,.docx,.xlsx,.mp4,.webm,.mp3,.wav" @change="onFileChange" class="form-input" style="width:100%" /></div>
               <div class="form-group" style="width:110px"><label>目标岗位</label><select v-model="editing.knowledge_base" class="form-input" style="width:100%"><option value="public">公共</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option></select></div>
               <div class="form-group" style="width:160px"><label>目标分类</label><select v-model="editing.category_id" class="form-input" style="width:100%"><option :value="0">自动匹配</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.name }}</option></select></div>
               <div class="form-group"><button class="btn" @click="smartImport" :disabled="!importFile || importLoading" style="padding:10px 20px;font-size:14px;white-space:nowrap">
@@ -347,6 +458,27 @@ onMounted(async () => {
                 {{ importLoading ? '⏳ AI拆分中...' : '🤖 AI拆分【执行对上传文案的拆题】' }}
               </button>
               <span style="margin-left:10px;font-size:12px;color:var(--text-sub)">已将文本解析完成，点击AI拆分生成试题草稿</span>
+            </div>
+            <!-- 视频/音频处理时间提示 -->
+            <div v-if="importFile && /\.(mp4|webm|mp3|wav)$/i.test(importFile.name)" style="margin-bottom:10px;font-size:12px;color:var(--accent)">
+              ⏱ 视频/音频将自动转写为文字后拆解试题，处理可能需要1-2分钟，请耐心等待
+            </div>
+
+            <!-- 视频/音频实时进度条 -->
+            <div v-if="importLoading && videoProgressPct > 0" class="video-progress-bar">
+              <div class="vpb-header">
+                <span class="vpb-step">{{ videoProgressDetail || '处理中...' }}</span>
+                <span class="vpb-pct">{{ videoProgressPct }}%</span>
+              </div>
+              <div class="vpb-track">
+                <div class="vpb-fill" :style="{ width: videoProgressPct + '%' }"></div>
+              </div>
+              <div class="vpb-time">
+                <span>⏱ 已耗时 {{ formatDuration(videoProgressElapsed) }}</span>
+                <span v-if="videoProgressEstTotal > 0">
+                  | 预估剩余 {{ formatDuration(Math.max(0, videoProgressEstTotal - videoProgressElapsed)) }}
+                </span>
+              </div>
             </div>
 
             <!-- 处理步骤 -->
@@ -455,6 +587,21 @@ onMounted(async () => {
 .smart-step.step-skip { background: rgba(232,130,74,0.08); }
 .smart-step.step-fail { background: rgba(192,64,59,0.08); color: var(--danger); }
 .step-icon { font-size: 14px; flex-shrink: 0; }
+
+/* 视频进度条 */
+.video-progress-bar {
+  margin-bottom: 14px; padding: 12px 14px;
+  background: var(--bg-main); border: 1px solid var(--border); border-radius: 10px;
+}
+.vpb-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.vpb-step { font-size: 13px; font-weight: 500; color: var(--text-main); }
+.vpb-pct { font-size: 20px; font-weight: 700; color: var(--primary); }
+.vpb-track { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; margin-bottom: 8px; }
+.vpb-fill {
+  height: 100%; background: linear-gradient(90deg, var(--primary), #4A90D9);
+  border-radius: 5px; transition: width 0.4s ease;
+}
+.vpb-time { font-size: 12px; color: var(--text-sub); display: flex; gap: 8px; }
 
 .review-section { border-top: 2px solid var(--primary); padding-top: 14px; }
 .review-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; font-size: 14px; }

@@ -9,7 +9,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 echarts.use([RadarChart, TooltipComponent, LegendComponent, CanvasRenderer])
 
 interface RadarItem {
-  category_name: string; mastery: number; expected: number
+  category_name: string; mastery: number; expected: number; description?: string
 }
 
 const props = defineProps<{
@@ -40,9 +40,15 @@ function renderChart() {
     tooltip: {
       trigger: 'item',
       formatter: (p: any) => {
-        const dimName = p.name || p.dimensionNames?.[p.dimensionIndex] || ''
+        const dimIdx = p.dimensionIndex ?? 0
+        const dim = displayData[dimIdx]
+        const dimName = dim?.category_name || p.name || ''
+        const desc = dim?.description || ''
         const vals = Array.isArray(p.value) ? p.value : [p.value]
-        return `<b>${dimName}</b><br/>${p.seriesName}: ${vals[0] ?? p.value}%`
+        let html = `<b>${dimName}</b>`
+        if (desc) html += `<br/><span style="color:#999;font-size:12px">${desc}</span>`
+        html += `<br/>${p.seriesName}: ${vals[0] ?? p.value}%`
+        return html
       },
     },
     legend: {
@@ -68,7 +74,12 @@ function renderChart() {
         areaStyle: { color: 'rgba(74,144,217,0.15)' },
         itemStyle: { color: '#4A90D9' },
         symbol: 'circle',
-        symbolSize: 4,
+        symbolSize: 6,
+        label: {
+          show: true,
+          formatter: (p: any) => { const v = Array.isArray(p.value) ? p.value : [p.value]; return `${v[0]}%` },
+          fontSize: 11, color: '#4A90D9', fontWeight: 'bold',
+        },
       },
       {
         name: '岗位期望',
@@ -79,6 +90,11 @@ function renderChart() {
         itemStyle: { color: '#E8824A' },
         symbol: 'circle',
         symbolSize: 3,
+        label: {
+          show: true,
+          formatter: (p: any) => { const v = Array.isArray(p.value) ? p.value : [p.value]; return `${v[0]}%` },
+          fontSize: 10, color: '#E8824A',
+        },
       },
     ],
   })

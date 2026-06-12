@@ -3,7 +3,7 @@
 """
 from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, and_
 
 from database import async_session
 from models import (
@@ -273,22 +273,24 @@ async def personal_dashboard(user: User = Depends(get_current_user)):
         allowed_kb = ["public", "sales", "tech", "service"]
 
     async with async_session() as db:
-        # 1. 各分类知识总数（approved）
+        # 1. 各分类知识总数（approved）—— LEFT JOIN 确保无条目的分类也显示
         cat_r = await db.execute(
             select(
-                KnowledgeEntry.category_id,
-                func.count(KnowledgeEntry.id),
+                KnowledgeCategory.id,
                 KnowledgeCategory.name,
                 KnowledgeCategory.icon,
+                KnowledgeCategory.description,
+                func.count(KnowledgeEntry.id).label("total"),
             )
-            .join(KnowledgeCategory, KnowledgeCategory.id == KnowledgeEntry.category_id)
-            .where(
+            .outerjoin(KnowledgeEntry, and_(
+                KnowledgeEntry.category_id == KnowledgeCategory.id,
                 KnowledgeEntry.status == "approved",
-                KnowledgeEntry.knowledge_base.in_(allowed_kb),
-            )
-            .group_by(KnowledgeEntry.category_id, KnowledgeCategory.name, KnowledgeCategory.icon)
+            ))
+            .where(KnowledgeCategory.knowledge_base.in_(allowed_kb))
+            .group_by(KnowledgeCategory.id, KnowledgeCategory.name, KnowledgeCategory.icon, KnowledgeCategory.description)
+            .order_by(KnowledgeCategory.sort_order)
         )
-        cat_totals = {r[0]: {"name": r[2], "icon": r[3], "total": r[1]} for r in cat_r.all()}
+        cat_totals = {r[0]: {"name": r[1], "icon": r[2], "description": r[3], "total": r[4]} for r in cat_r.all()}
 
         # 2. 用户已学各分类条目数
         learned_r = await db.execute(
@@ -314,12 +316,15 @@ async def personal_dashboard(user: User = Depends(get_current_user)):
                 "category_id": cat_id,
                 "category_name": info["name"],
                 "icon": info["icon"],
+                "description": info.get("description") or "",
                 "mastery": min(mastery, 100),
                 "learned": learned,
                 "total": info["total"],
                 "expected": 80,
             })
         radar_data.sort(key=lambda x: x["mastery"])
+        # 过滤掉无知识条目的维度（total=0 掌握度永远是 0，无意义）
+        radar_data = [d for d in radar_data if d["total"] > 0]
         weak_areas = radar_data[:3]
 
         total_learned = sum(d["learned"] for d in radar_data)
@@ -443,20 +448,23 @@ async def team_dashboard(
         mids_r = await db.execute(select(User.id).where(User.dept_id == did))
         mids = [r[0] for r in mids_r.all()]
 
-        # 团队雷达（各分类平均掌握度）
-        # 获取所有分类
+        # 团队雷达（各分类平均掌握度）—— LEFT JOIN 确保无条目的分类也显示
         cat_r = await db.execute(
             select(
-                KnowledgeEntry.category_id,
-                func.count(KnowledgeEntry.id),
+                KnowledgeCategory.id,
                 KnowledgeCategory.name,
                 KnowledgeCategory.icon,
+                KnowledgeCategory.description,
+                func.count(KnowledgeEntry.id).label("total"),
             )
-            .join(KnowledgeCategory, KnowledgeCategory.id == KnowledgeEntry.category_id)
-            .where(KnowledgeEntry.status == "approved")
-            .group_by(KnowledgeEntry.category_id, KnowledgeCategory.name, KnowledgeCategory.icon)
+            .outerjoin(KnowledgeEntry, and_(
+                KnowledgeEntry.category_id == KnowledgeCategory.id,
+                KnowledgeEntry.status == "approved",
+            ))
+            .group_by(KnowledgeCategory.id, KnowledgeCategory.name, KnowledgeCategory.icon, KnowledgeCategory.description)
+            .order_by(KnowledgeCategory.sort_order)
         )
-        cat_totals = {r[0]: {"name": r[2], "icon": r[3], "total": r[1]} for r in cat_r.all()}
+        cat_totals = {r[0]: {"name": r[1], "icon": r[2], "description": r[3], "total": r[4]} for r in cat_r.all()}
 
         radar_data = []
         total_learned_all = 0
@@ -476,6 +484,7 @@ async def team_dashboard(
             avg_mastery = min(round(learned_total / info["total"] * 100, 1) if info["total"] > 0 else 0, 100)
             radar_data.append({
                 "category_id": cat_id, "category_name": info["name"], "icon": info["icon"],
+                "description": info.get("description") or "",
                 "mastery": avg_mastery, "total": info["total"],
                 "expected": 80,
             })
@@ -483,6 +492,8 @@ async def team_dashboard(
             total_all += info["total"]
 
         radar_data.sort(key=lambda x: x["mastery"])
+        # 过滤掉无知识条目的维度（total=0 掌握度永远是 0，无意义）
+        radar_data = [d for d in radar_data if d["total"] > 0]
         weak_areas = radar_data[:3]
         team_mastery = round(total_learned_all / (total_all * len(mids)) * 100, 1) if total_all > 0 and mids else 0
 

@@ -1,18 +1,24 @@
 """
-审核路由 —— 待审核列表 / 通过(自动积分) / 驳回 / 历史
+审核路由 —— 待审核列表 / 通过(自动积分) / 驳回 / 历史 / AI拆分试题 / 试题入库
 """
+import json, logging, hashlib, base64
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from datetime import datetime
+from cryptography.fernet import Fernet
 
 from database import async_session
 from models import (
-    KnowledgeEntry, ExperiencePoint, User,
-    EntryStatusEnum, PointActionEnum,
+    KnowledgeEntry, ExperiencePoint, User, DailyQuestion,
+    LLMProvider, EntryStatusEnum, PointActionEnum,
 )
-from schemas import ApiResponse, RejectRequest
+from schemas import ApiResponse, RejectRequest, BatchQuestionImport
 from auth import get_current_user, require_admin
 from routers.logs import audit_log
+from routers.questions import _call_llm_batch_generate
+from config import LLM_ENCRYPTION_KEY
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -123,6 +129,54 @@ async def reject_knowledge(
         f"驳回: {entry.title[:100]} | 原因: {body.audit_comment[:100]}",
     ))
     return ApiResponse(msg="已驳回")
+
+
+@router.post("/review/{entry_id}/ai-split-questions", response_model=ApiResponse)
+async def ai_split_questions(
+    entry_id: int,
+    _admin: User = Depends(require_admin),
+):
+    """AI拆分试题：从审核中心的经验数据中，调用AI拆解生成试题草稿（不入库）"""
+    async with async_session() as db:
+        result = await db.execute(
+            select(KnowledgeEntry).where(KnowledgeEntry.id == entry_id)
+        )
+        entry = result.scalar_one_or_none()
+        if not entry:
+            raise HTTPException(status_code=404, detail="知识不存在")
+
+        # 获取默认LLM
+        llm_r = await db.execute(
+            select(LLMProvider).where(
+                LLMProvider.is_active == True,
+                LLMProvider.is_default == True,
+            )
+        )
+        llm = llm_r.scalar_one_or_none()
+
+        if not llm or not llm.api_key:
+            return ApiResponse(code=400, data={"drafts": []}, msg="LLM未配置，请先配置AI模型")
+
+        # 从 knowledge_base 推导 target_position
+        kb = entry.knowledge_base.value if entry.knowledge_base else ""
+        target_position = kb if kb in ("sales", "tech", "service") else ""
+
+        drafts = await _call_llm_batch_generate(llm, entry.content, target_position)
+
+        if not drafts:
+            return ApiResponse(code=400, data={"drafts": []}, msg="AI拆分失败，请检查LLM配置或重试")
+
+    # 注入知识条目关联信息，确保入库后答题能关联到 LearningRecord
+    for d in drafts:
+        d["related_knowledge_id"] = entry_id
+        if entry.category_id:
+            d["category_id"] = entry.category_id
+
+    return ApiResponse(data={
+        "entry_id": entry_id,
+        "drafts": drafts,
+        "count": len(drafts),
+    }, msg=f"AI已生成 {len(drafts)} 道题目草稿，请复核后入库")
 
 
 @router.get("/review/history", response_model=ApiResponse)
