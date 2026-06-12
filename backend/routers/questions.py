@@ -398,7 +398,7 @@ async def ai_generate(
 
         draft = None
         if llm and llm.api_key:
-            draft = await _call_llm_generate(llm, ke.title, ke.content, count)
+            draft = await _call_llm_batch_generate(llm, ke.title + "\n" + ke.content, "")
 
         if not draft:
             # 降级：返回基于模板的草稿

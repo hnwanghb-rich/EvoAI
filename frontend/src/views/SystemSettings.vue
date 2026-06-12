@@ -5,7 +5,36 @@ import axios from 'axios'
 interface SettingRow { id?: number; value: string; type: string; description: string; updated_at?: string | null }
 interface LogItem { id: number; user_id: number | null; username: string | null; action: string; target_type: string | null; target_id: number | null; detail: string | null; ip_address: string | null; created_at: string | null }
 
-const activeTab = ref<'points' | 'flywheel' | 'categories' | 'logs' | 'export'>('points')
+const activeTab = ref<'points' | 'flywheel' | 'categories' | 'asr' | 'logs' | 'export'>('points')
+
+// ASR 配置
+const asrSecretId = ref('')
+const asrSecretKey = ref('')
+const asrConfigured = ref(false)
+const asrProvider = ref('whisper')
+const asrSaving = ref(false)
+const asrMsg = ref('')
+async function fetchAsrConfig() {
+  try {
+    const { data } = await axios.get('/api/settings/asr')
+    asrSecretId.value = data.data.secret_id || ''
+    asrConfigured.value = data.data.configured
+    asrProvider.value = data.data.provider || 'whisper'
+  } catch { /* */ }
+}
+async function saveAsrConfig() {
+  asrSaving.value = true; asrMsg.value = ''
+  try {
+    const params: any = { provider: asrProvider.value }
+    if (asrSecretId.value.trim() && !asrSecretId.value.includes('*')) params.secret_id = asrSecretId.value.trim()
+    if (asrSecretKey.value.trim() && !asrSecretKey.value.includes('*')) params.secret_key = asrSecretKey.value.trim()
+    await axios.put('/api/settings/asr', null, { params })
+    asrMsg.value = '✅ ASR 配置已保存，立即生效'
+    asrConfigured.value = asrProvider.value === 'whisper' || (!!params.secret_id && !!params.secret_key)
+    asrSecretKey.value = ''
+  } catch (e: any) { asrMsg.value = '❌ 保存失败：' + (e.response?.data?.detail || e.message) }
+  finally { asrSaving.value = false }
+}
 
 // 分类标签管理
 interface CatItem { id: number; name: string; knowledge_base: string; sort_order: number; icon: string | null; knowledge_count: number; question_count: number }
@@ -119,7 +148,7 @@ async function exportCSV() {
   }
 }
 
-onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories() })
+onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories(); fetchAsrConfig() })
 </script>
 
 <template>
@@ -131,6 +160,7 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories() })
       <button :class="{ active: activeTab === 'points' }" @click="activeTab = 'points'">积分规则</button>
       <button :class="{ active: activeTab === 'flywheel' }" @click="activeTab = 'flywheel'">飞轮阈值</button>
       <button :class="{ active: activeTab === 'categories' }" @click="activeTab = 'categories'; fetchCategories()">分类标签</button>
+      <button :class="{ active: activeTab === 'asr' }" @click="activeTab = 'asr'; fetchAsrConfig()">ASR配置</button>
       <button :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'">审计日志</button>
       <button :class="{ active: activeTab === 'export' }" @click="activeTab = 'export'">数据导出</button>
     </div>
@@ -200,6 +230,60 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories() })
         </div>
       </div>
     </Teleport>
+
+    <!-- ASR 配置 -->
+    <div v-if="activeTab === 'asr'" class="ss-tab card">
+      <h3>语音识别引擎配置</h3>
+      <p class="import-hint" style="margin-bottom:16px">选择视频/音频上传时使用的语音转文字引擎。<span style="color:var(--success)">保存后立即生效</span>。</p>
+
+      <!-- 引擎选择 -->
+      <div style="margin-bottom:20px">
+        <label style="font-weight:600;font-size:14px;display:block;margin-bottom:10px">选择 ASR 引擎</label>
+        <div style="display:flex;gap:16px">
+          <label class="asr-radio" :class="{ active: asrProvider === 'whisper' }" style="flex:1;padding:16px;border:2px solid var(--border);border-radius:10px;cursor:pointer;text-align:center;transition:border-color 0.15s">
+            <input type="radio" v-model="asrProvider" value="whisper" @change="saveAsrConfig" style="display:none" />
+            <div style="font-size:28px;margin-bottom:6px">🖥️</div>
+            <div style="font-weight:600;font-size:14px;margin-bottom:4px">本地 Whisper</div>
+            <div style="font-size:11px;color:var(--text-sub)">免费 · 离线 · 无需密钥</div>
+            <div v-if="asrProvider === 'whisper'" style="margin-top:6px;font-size:11px;color:var(--success);font-weight:600">✓ 当前使用中</div>
+          </label>
+          <label class="asr-radio" :class="{ active: asrProvider === 'tencent' }" style="flex:1;padding:16px;border:2px solid var(--border);border-radius:10px;cursor:pointer;text-align:center;transition:border-color 0.15s">
+            <input type="radio" v-model="asrProvider" value="tencent" @change="saveAsrConfig" style="display:none" />
+            <div style="font-size:28px;margin-bottom:6px">☁️</div>
+            <div style="font-weight:600;font-size:14px;margin-bottom:4px">腾讯云 ASR</div>
+            <div style="font-size:11px;color:var(--text-sub)">云端 · 高精度 · 免费5h/月</div>
+            <div v-if="asrProvider === 'tencent'" style="margin-top:6px;font-size:11px;color:var(--success);font-weight:600">✓ 当前使用中</div>
+          </label>
+        </div>
+      </div>
+
+      <!-- 腾讯云密钥（仅 tencent 模式显示） -->
+      <div v-if="asrProvider === 'tencent'" style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px">
+        <h4 style="font-size:14px;margin-bottom:10px">腾讯云 API 密钥</h4>
+        <div v-if="asrConfigured" class="asr-status" style="margin-bottom:12px;padding:10px 14px;background:rgba(122,166,104,0.08);border:1px solid rgba(122,166,104,0.3);border-radius:6px;font-size:13px;color:var(--success)">
+          ✅ ASR 密钥已配置，可正常使用
+        </div>
+        <div class="form-group">
+          <label>SecretId</label>
+          <input v-model="asrSecretId" class="form-input" style="width:100%" :placeholder="asrConfigured ? '已配置（修改请输入新值）' : '腾讯云 API 密钥 SecretId'" />
+        </div>
+        <div class="form-group">
+          <label>SecretKey</label>
+          <input v-model="asrSecretKey" type="password" class="form-input" style="width:100%" :placeholder="asrConfigured ? '留空不修改（修改请输入新值）' : '腾讯云 API 密钥 SecretKey'" />
+        </div>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:12px">
+          💡 密钥获取：登录 <a href="https://console.cloud.tencent.com/cam/capi" target="_blank" style="color:var(--primary)">腾讯云 API 密钥管理</a> → 新建密钥 → 复制粘贴到此处。
+        </p>
+      </div>
+
+      <!-- 保存按钮 -->
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn" @click="saveAsrConfig" :disabled="asrSaving">
+          {{ asrSaving ? '保存中...' : '💾 保存配置' }}
+        </button>
+        <span v-if="asrMsg" :style="asrMsg.startsWith('✅') ? 'color:var(--success);font-size:13px' : 'color:var(--danger);font-size:13px'">{{ asrMsg }}</span>
+      </div>
+    </div>
 
     <!-- 审计日志 -->
     <div v-if="activeTab === 'logs'" class="ss-tab">
@@ -293,6 +377,7 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories() })
 .ss-cat-table th, .ss-cat-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 .ss-cat-table th { background: var(--bg-main); font-size: 12px; color: var(--text-sub); }
 .ss-cat-ops { display: flex; gap: 4px; }
+.asr-radio.active { border-color: var(--primary) !important; background: var(--bg-main); }
 
 @media (max-width: 768px) {
   .ss-tabs { overflow-x: auto; }

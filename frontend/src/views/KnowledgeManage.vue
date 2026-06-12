@@ -162,7 +162,9 @@ function handleSSEEvent(type: string, evt: any) {
     videoProgressPct.value = evt.pct || videoProgressPct.value
     videoProgressElapsed.value = evt.elapsed_sec || videoProgressElapsed.value
     videoProgressEstTotal.value = evt.estimated_total_sec || videoProgressEstTotal.value
-    importSteps.value.push({ step: evt.step || 'progress', status: 'ok', detail: evt.detail || '' })
+    // 根据 step 名称推断状态: audio_fail/transcribe_fallback → fail
+    const stepStatus = /_fail$|_fallback$|_error$/i.test(evt.step || '') ? 'fail' : 'ok'
+    importSteps.value.push({ step: evt.step || 'progress', status: stepStatus, detail: evt.detail || '' })
   } else if (type === 'done') {
     videoProgressPct.value = 100
     importSteps.value.push({ step: 'done', status: 'ok', detail: evt.message || '处理完成' })
@@ -175,6 +177,10 @@ function handleSSEEvent(type: string, evt: any) {
       showReview.value = true
     }
     importDone.value = true
+    // 视频导入完成后，如果有 entry_ids，把文本留空让用户选 AI 拆分
+    if (evt.entry_ids?.length) {
+      importText.value = ''  // 视频无文本，需要用户手动触发AI拆分或直接关闭
+    }
   } else if (type === 'error') {
     importSteps.value.push({ step: 'error', status: 'fail', detail: '❌ ' + (evt.detail || '未知错误') })
   }

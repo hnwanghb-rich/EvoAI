@@ -67,6 +67,7 @@ async function fetchHistory() {
 }
 
 function selectItem(item: PendingItem) {
+  if (aiSplitting.value) return  // AI拆分中禁止切换
   selected.value = item
   rejectComment.value = ''
   showReject.value = false
@@ -79,6 +80,7 @@ function selectItem(item: PendingItem) {
 async function approve(id: number) {
   await axios.post(`/api/review/${id}/approve`)
   pending.value = pending.value.filter(i => i.id !== id)
+  pendingTotal.value = pending.value.length
   if (selected.value?.id === id) {
     selected.value = pending.value[0] || null
   }
@@ -90,6 +92,7 @@ async function reject(id: number) {
     audit_comment: rejectComment.value,
   })
   pending.value = pending.value.filter(i => i.id !== id)
+  pendingTotal.value = pending.value.length
   if (selected.value?.id === id) {
     selected.value = pending.value[0] || null
   }
@@ -97,21 +100,46 @@ async function reject(id: number) {
   rejectComment.value = ''
 }
 
+const aiProgressPct = ref(0)
+const aiProgressStage = ref('')
+let aiProgressTimer: any = null
+
 async function aiSplitQuestions(id: number) {
   aiSplitting.value = true
   aiSplitMsg.value = ''
+  aiProgressPct.value = 0
+  aiProgressStage.value = '正在准备...'
   drafts.value = []
   showDrafts.value = false
   splittingEntryId.value = id
+
+  // 模拟进度条（前80%靠定时器猜，到达80%后等真实返回）
+  let fakePct = 0
+  aiProgressTimer = setInterval(() => {
+    fakePct += Math.random() * 8 + 2
+    if (fakePct > 78) fakePct = 78
+    aiProgressPct.value = Math.round(fakePct)
+    if (fakePct < 15) aiProgressStage.value = '提取音频...'
+    else if (fakePct < 40) aiProgressStage.value = '语音转文字（ASR）...'
+    else if (fakePct < 70) aiProgressStage.value = 'AI 分析语义...'
+    else aiProgressStage.value = '生成试题草稿...'
+  }, 600)
+
   try {
     const { data } = await axios.post(`/api/review/${id}/ai-split-questions`)
+    clearInterval(aiProgressTimer)
+    aiProgressPct.value = 100
+    aiProgressStage.value = '完成'
     drafts.value = data.data?.drafts || []
     aiSplitMsg.value = data.msg || `AI已生成 ${drafts.value.length} 道题目草稿`
     showDrafts.value = true
   } catch (e: any) {
+    clearInterval(aiProgressTimer)
+    aiProgressPct.value = 0
     aiSplitMsg.value = e?.response?.data?.msg || 'AI拆分失败，请重试'
   } finally {
     aiSplitting.value = false
+    if (aiProgressTimer) clearInterval(aiProgressTimer)
   }
 }
 
@@ -129,6 +157,7 @@ async function batchImportQuestions() {
     if (splittingEntryId.value > 0) {
       await axios.post(`/api/review/${splittingEntryId.value}/approve`)
       pending.value = pending.value.filter(i => i.id !== splittingEntryId.value)
+      pendingTotal.value = pending.value.length
       if (selected.value?.id === splittingEntryId.value) {
         selected.value = pending.value[0] || null
       }
@@ -178,7 +207,7 @@ onMounted(() => {
     <!-- 待审核 -->
     <div class="review-body" v-if="tab === 'pending'">
       <!-- 左侧列表 -->
-      <div class="review-list">
+      <div class="review-list" :class="{ disabled: aiSplitting }">
         <div
           v-for="item in pending" :key="item.id"
           class="review-list-item"
@@ -209,6 +238,15 @@ onMounted(() => {
         <div class="rd-content">
           <pre>{{ selected.content }}</pre>
         </div>
+        <!-- AI 拆分进度条（视频/音频处理时显示） -->
+        <div v-if="aiSplitting" class="rd-progress">
+          <div class="progress-stage">{{ aiProgressStage }}</div>
+          <div class="progress-track">
+            <div class="progress-fill" :style="{ width: aiProgressPct + '%' }"></div>
+          </div>
+          <div class="progress-pct">{{ aiProgressPct }}%</div>
+        </div>
+
         <div class="rd-actions">
           <button class="btn btn-sm" style="background:var(--success)" @click="approve(selected.id)">
             ✓ 审核通过
@@ -350,6 +388,21 @@ onMounted(() => {
 
 .empty { font-size: 14px; color: var(--text-sub); text-align: center; padding: 40px 0; }
 
+/* 左侧列表禁用遮罩 */
+.review-list.disabled {
+  pointer-events: none;
+  opacity: 0.45;
+  position: relative;
+}
+.review-list.disabled::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.03);
+  border-radius: 8px;
+  z-index: 1;
+}
+
 .review-detail {
   flex: 1; min-width: 0;
   background: var(--bg-card); border: 1px solid var(--border);
@@ -373,6 +426,32 @@ onMounted(() => {
   padding: 16px; border-radius: 6px; margin: 0;
 }
 .rd-actions { display: flex; gap: 10px; margin-top: 16px; }
+
+/* AI拆分进度条 */
+.rd-progress {
+  margin-top: 16px; padding: 16px;
+  background: var(--bg-main); border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.progress-stage {
+  font-size: 13px; font-weight: 600; color: var(--text-main);
+  margin-bottom: 10px;
+}
+.progress-track {
+  width: 100%; height: 10px;
+  background: var(--bg-card); border-radius: 5px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%; border-radius: 5px;
+  background: linear-gradient(90deg, var(--primary), #7c3aed);
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+.progress-pct {
+  margin-top: 6px; font-size: 12px; color: var(--text-sub);
+  text-align: right;
+}
 .rd-reject { margin-top: 12px; padding: 12px; background: var(--bg-main); border-radius: 8px; }
 
 /* 历史表格 */

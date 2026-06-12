@@ -116,7 +116,15 @@ async def video_import_stream(
     base_title = Path(safe_name_raw).stem
     # 在 session 有效期内读取 user.dept（避免生成器内 DetachedInstanceError）
     source_dept = user.dept.name if user.dept else ""
-    logger.info(f"[SSE] file saved: {safe_name} ({file_size_mb:.1f}MB), starting SSE stream")
+    # 预加载 ASR 密钥（避免 SSE 生成器内 async_session 嵌套问题）
+    import asyncio as _asyncio2
+    try:
+        from asr import _load_keys_from_db as _asr_load, reset_asr_cache as _asr_reset
+        _asr_reset()  # 清除可能缓存的空值
+        _asr_keys = await _asyncio2.ensure_future(_asr_load())
+    except Exception:
+        _asr_keys = ("", "")
+    logger.info(f"[SSE] file saved: {safe_name} ({file_size_mb:.1f}MB), ASR keys={'ready' if _asr_keys[0] else 'none'}, starting SSE stream")
 
     async def generate():
         t0 = _time.time()
@@ -278,7 +286,22 @@ async def video_import_stream(
             yield _sse_fmt("error", {"detail": f"写入知识条目失败: {e}"})
             return
 
-        # ── Step 7: AI 出题（合并所有片段文本） ──
+        # ── Step 7: AI 出题（仅当有真实 ASR 转写结果时才执行） ──
+        use_real_asr = seg_status != EntryStatusEnum.pending  # 静态分段跳过 AI 出题
+        if not use_real_asr:
+            yield _sse_fmt("progress", {
+                "step": "ai_skip",
+                "detail": "无 ASR 转写内容，跳过 AI 出题（可手动编辑片段内容后再点击AI拆分按钮）",
+                "pct": 95, "elapsed_sec": round(_time.time() - t0, 1),
+            })
+            yield _sse_fmt("done", {
+                "entry_ids": entry_ids, "drafts": [],
+                "total_sec": round(_time.time() - t0, 1),
+                "category": cat_info,
+                "message": f"视频处理完成：{len(entry_ids)} 个片段（待填写内容后手动AI出题）",
+            })
+            return
+
         yield _sse_fmt("progress", {
             "step": "ai_questions", "detail": "正在调用 AI 拆解试题...",
             "pct": 87, "elapsed_sec": round(_time.time() - t0, 1),

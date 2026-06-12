@@ -260,45 +260,43 @@ def _run_ffmpeg_sync(video_path: str, output_path: str):
 
 async def _transcribe_with_timestamps(audio_path: str) -> list[dict]:
     """
-    ASR 四级回退：
-    1. OpenAI Whisper 兼容 API（复用已配置的 LLM）
-    2. 腾讯云 ASR（需单独配置 TENCENT_SECRET_ID/KEY）
-    3. 本地 faster-whisper（CPU 离线转写，免费用）
-    4. 静态分段 pending（兜底，await 人工填写）
+    ASR 统一转写入口 —— 系统配置的引擎优先，失败自动回退 Whisper
     返回: [{"start": float, "end": float, "text": str}, ...] 或空列表(兜底)
     """
-    provider = ASR_PROVIDER or "openai_compatible"
+    from asr import get_active_asr_provider
+    provider = await get_active_asr_provider()
+    logger.info(f"ASR 引擎配置: {provider}")
 
-    # Tier 1: OpenAI Whisper 兼容
-    if provider in ("openai_compatible",):
-        try:
-            result = await _transcribe_openai_compatible(audio_path)
-            if result:
-                logger.info(f"OpenAI Whisper 转写完成: {len(result)} 段, {sum(len(s['text']) for s in result)} 字符")
-                return result
-        except Exception as e:
-            logger.warning(f"OpenAI Whisper 转写失败: {e}")
-
-    # Tier 2: 腾讯云 ASR
-    if provider == "tencent" and TENCENT_SECRET_ID and TENCENT_SECRET_KEY:
+    # 腾讯云模式：先试腾讯云，失败自动回退本地 Whisper
+    if provider == "tencent":
         try:
             result = await _transcribe_tencent(audio_path)
             if result:
-                logger.info(f"腾讯云 ASR 转写完成: {len(result)} 段")
+                logger.info(f"腾讯云 ASR: {len(result)} 段")
+                return result
+            logger.warning("腾讯云 ASR 返回空（密钥无效或API失败），回退到本地 Whisper")
+        except Exception as e:
+            logger.warning(f"腾讯云 ASR 异常: {e}，回退到本地 Whisper")
+
+        # 自动回退
+        try:
+            result = await _transcribe_local_whisper(audio_path)
+            if result:
+                logger.info(f"Whisper 回退成功: {len(result)} 段")
                 return result
         except Exception as e:
-            logger.warning(f"腾讯云 ASR 转写失败: {e}")
+            logger.warning(f"Whisper 回退也失败: {e}")
 
-    # Tier 3: 本地 faster-whisper（离线、免费）
-    try:
-        result = await _transcribe_local_whisper(audio_path)
-        if result:
-            logger.info(f"本地 Whisper 转写完成: {len(result)} 段, {sum(len(s['text']) for s in result)} 字符")
-            return result
-    except Exception as e:
-        logger.warning(f"本地 Whisper 转写失败: {e}")
+    # Whisper 模式
+    if provider == "whisper":
+        try:
+            result = await _transcribe_local_whisper(audio_path)
+            if result:
+                logger.info(f"本地 Whisper: {len(result)} 段")
+                return result
+        except Exception as e:
+            logger.warning(f"Whisper 失败: {e}")
 
-    # Tier 4: 兜底 —— 返回空列表，上层用静态分段 pending
     logger.warning("所有 ASR 均不可用，回退到静态分段(pending)")
     return []
 
@@ -437,170 +435,12 @@ def _run_local_whisper(model, audio_path: str) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════
 
 async def _transcribe_tencent(audio_path: str) -> list[dict] | None:
-    """腾讯云语音识别 —— 短音频 SentenceRecognition，长音频 CreateRecTask"""
-    import hmac
-    import time
-    import json as json_mod
-
-    secret_id = TENCENT_SECRET_ID
-    secret_key = TENCENT_SECRET_KEY
-    app_id = TENCENT_ASR_APP_ID
-    if not secret_id or not secret_key:
-        return None
-
-    # 获取音频时长
-    duration = await _get_audio_duration(audio_path)
-
-    # 读取音频为 base64
-    with open(audio_path, "rb") as f:
-        audio_b64 = base64.b64encode(f.read()).decode()
-
-    service = "asr"
-    host = "asr.tencentcloudapi.com"
-    endpoint = f"https://{host}"
-    action = "SentenceRecognition" if duration <= 60 else "CreateRecTask"
-    version = "2019-06-14"
-    region = "ap-guangzhou"
-    timestamp = int(time.time())
-
-    # 签名
-    payload = json_mod.dumps({
-        "ProjectId": 0,
-        "SubServiceType": 2,
-        "EngSerViceType": "16k_zh" if duration <= 60 else "16k_zh_video",
-        "SourceType": 1,
-        "VoiceFormat": "wav",
-        "Data": audio_b64,
-        "DataLen": os.path.getsize(audio_path),
-    })
-    if action == "CreateRecTask":
-        payload_data = {
-            "EngineModelType": "16k_zh_video",
-            "ChannelNum": 1,
-            "ResTextFormat": 3,  # 带时间戳
-            "SourceType": 1,
-            "Data": audio_b64,
-            "DataLen": os.path.getsize(audio_path),
-        }
-        payload = json_mod.dumps(payload_data)
-
-    algorithm = "TC3-HMAC-SHA256"
-    date_str = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
-    canonical_headers = f"content-type:application/json; charset=utf-8\nhost:{host}\n"
-    signed_headers = "content-type;host"
-    hashed_payload = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    canonical_request = (
-        f"POST\n/\n\n{canonical_headers}\n{signed_headers}\n{hashed_payload}"
-    )
-    credential_scope = f"{date_str}/{service}/tc3_request"
-    string_to_sign = (
-        f"{algorithm}\n{timestamp}\n{credential_scope}\n"
-        f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
-    )
-    def _sign(key_bytes, msg):
-        return hmac.new(key_bytes, msg.encode("utf-8"), hashlib.sha256).digest()
-    secret_date = _sign(f"TC3{secret_key}".encode("utf-8"), date_str)
-    secret_service = _sign(secret_date, service)
-    secret_signing = _sign(secret_service, "tc3_request")
-    signature = hmac.new(secret_signing, string_to_sign.encode("utf-8"),
-                         hashlib.sha256).hexdigest()
-    authorization = (
-        f"{algorithm} Credential={secret_id}/{credential_scope}, "
-        f"SignedHeaders={signed_headers}, Signature={signature}"
-    )
-
-    try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            headers = {
-                "Authorization": authorization,
-                "Content-Type": "application/json; charset=utf-8",
-                "Host": host,
-                "X-TC-Action": action,
-                "X-TC-Version": version,
-                "X-TC-Timestamp": str(timestamp),
-                "X-TC-Region": region,
-            }
-            resp = await client.post(endpoint, headers=headers, content=payload)
-            resp.raise_for_status()
-            data = resp.json()
-
-            if "Response" not in data or "Error" in data.get("Response", {}):
-                err = data.get("Response", {}).get("Error", {})
-                logger.warning(f"腾讯云 ASR 错误: {err.get('Code')} {err.get('Message')}")
-                return None
-
-            response = data["Response"]
-
-            # SentenceRecognition 直接返回结果
-            if action == "SentenceRecognition":
-                text = response.get("Result", "")
-                if text.strip():
-                    return [{"start": 0, "end": duration, "text": text.strip()}]
-                return None
-
-            # CreateRecTask → 轮询结果
-            task_id = response.get("Data", {}).get("TaskId", 0)
-            if not task_id:
-                return None
-
-            # 轮询（最多 30 次，每次 2 秒）
-            for _ in range(30):
-                await _async_sleep(2)
-                poll_payload = json_mod.dumps({"TaskId": task_id})
-                hashed = hashlib.sha256(poll_payload.encode("utf-8")).hexdigest()
-                can_req = (
-                    f"POST\n/\n\n{canonical_headers}\n{signed_headers}\n{hashed}"
-                )
-                ts2 = int(time.time())
-                scope2 = f"{datetime.utcfromtimestamp(ts2).strftime('%Y-%m-%d')}/{service}/tc3_request"
-                sig2_str = f"{algorithm}\n{ts2}\n{scope2}\n{hashlib.sha256(can_req.encode('utf-8')).hexdigest()}"
-                sd2 = _sign(f"TC3{secret_key}".encode("utf-8"), datetime.utcfromtimestamp(ts2).strftime("%Y-%m-%d"))
-                ss2 = _sign(sd2, service)
-                sn2 = _sign(ss2, "tc3_request")
-                sig2 = hmac.new(sn2, sig2_str.encode("utf-8"), hashlib.sha256).hexdigest()
-                auth2 = (
-                    f"{algorithm} Credential={secret_id}/{scope2}, "
-                    f"SignedHeaders={signed_headers}, Signature={sig2}"
-                )
-                p_headers = {
-                    "Authorization": auth2,
-                    "Content-Type": "application/json; charset=utf-8",
-                    "Host": host,
-                    "X-TC-Action": "DescribeTaskStatus",
-                    "X-TC-Version": version,
-                    "X-TC-Timestamp": str(ts2),
-                    "X-TC-Region": region,
-                }
-                pr = await client.post(endpoint, headers=p_headers, content=poll_payload)
-                pr.raise_for_status()
-                pd = pr.json()
-                status = pd.get("Response", {}).get("Data", {}).get("StatusStr", "")
-                if status == "success":
-                    result_text = pd.get("Response", {}).get("Data", {}).get("Result", "")
-                    # Result 可能是带时间戳的数组
-                    if isinstance(result_text, list) and len(result_text) > 0:
-                        return [
-                            {"start": s.get("StartTime", 0) / 1000.0,
-                             "end": s.get("EndTime", 0) / 1000.0,
-                             "text": s.get("Text", "")}
-                            for s in result_text if s.get("Text")
-                        ]
-                    elif isinstance(result_text, str) and result_text.strip():
-                        return [{"start": 0, "end": duration, "text": result_text.strip()}]
-                    break
-                elif status == "failed":
-                    logger.warning("腾讯云 ASR 任务失败")
-                    return None
-            return None
-    except Exception as e:
-        logger.warning(f"腾讯云 ASR 异常: {e}")
-        return None
-
-
-async def _async_sleep(seconds: float):
-    """异步等待"""
-    import asyncio
-    await asyncio.sleep(seconds)
+    """腾讯云语音识别 —— 调用 asr.py 模块"""
+    from asr import transcribe_audio
+    segments = await transcribe_audio(audio_path)
+    if segments:
+        return segments
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════

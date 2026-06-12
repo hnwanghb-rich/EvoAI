@@ -1,7 +1,7 @@
 """
 审核路由 —— 待审核列表 / 通过(自动积分) / 驳回 / 历史 / AI拆分试题 / 试题入库
 """
-import json, logging, hashlib, base64
+import os, json, logging, hashlib, base64, uuid, tempfile
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from datetime import datetime
@@ -161,7 +161,18 @@ async def ai_split_questions(
         kb = entry.knowledge_base.value if entry.knowledge_base else ""
         target_position = kb if kb in ("sales", "tech", "service") else ""
 
-        drafts = await _call_llm_batch_generate(llm, entry.content, target_position)
+        # 如果是视频/音频类型且内容为空 → 先调 ASR 提取文字
+        content_for_ai = entry.content or ""
+        if entry.content_type and entry.content_type.value in ("video", "audio"):
+            # 内容长度不足 → 说明是占位文本，需要 ASR
+            if not content_for_ai.strip() or len(content_for_ai) < 100:
+                logger.info(f"视频/音频内容为空，尝试 ASR 转写: entry_id={entry_id}")
+                audio_text = await _asr_transcribe_entry(entry)
+                if audio_text:
+                    content_for_ai = audio_text
+                    logger.info(f"ASR 转写成功，获得 {len(content_for_ai)} 字符")
+
+        drafts = await _call_llm_batch_generate(llm, content_for_ai, target_position)
 
         if not drafts:
             return ApiResponse(code=400, data={"drafts": []}, msg="AI拆分失败，请检查LLM配置或重试")
@@ -213,3 +224,56 @@ async def review_history(
                 "updated_at": e.updated_at.isoformat() if e.updated_at else None,
             })
     return ApiResponse(data={"items": items, "total": total, "page": page, "page_size": page_size})
+
+
+# ============================================================
+# ASR 转写辅助（审核中心 AI 拆分视频/音频时调用）
+# ============================================================
+
+async def _asr_transcribe_entry(entry) -> str:
+    """对视频/音频知识条目执行 ASR 转写，返回文字内容"""
+    source_path = entry.source_file_path
+    if not source_path or not os.path.isfile(source_path):
+        logger.warning(f"视频源文件不存在: {source_path}")
+        return ""
+
+    logger.info(f"审核中心 ASR: 开始处理 {os.path.basename(source_path)}")
+    audio_path = os.path.join(tempfile.gettempdir(), f"review_asr_{uuid.uuid4().hex[:8]}.mp3")
+    try:
+        from video_processor import (
+            _extract_audio_async, _transcribe_with_timestamps,
+        )
+        await _extract_audio_async(source_path, audio_path)
+        segments = await _transcribe_with_timestamps(audio_path)
+
+        if segments:
+            text = "\n\n".join(
+                f"[{seg['start']:.0f}s-{seg['end']:.0f}s] {seg['text']}"
+                for seg in segments
+            )
+            # 更新 entry content，避免下次重复转写
+            try:
+                async with async_session() as db:
+                    from sqlalchemy import update
+                    await db.execute(
+                        update(KnowledgeEntry)
+                        .where(KnowledgeEntry.id == entry.id)
+                        .values(content=text[:10000])
+                    )
+                    await db.commit()
+                    logger.info(f"审核中心 ASR: entry_id={entry.id} 内容已更新 {len(text)} 字符")
+            except Exception as e:
+                logger.warning(f"更新 entry content 失败: {e}")
+            return text
+
+        logger.warning("审核中心 ASR: 转写返回空结果")
+    except Exception as e:
+        logger.warning(f"审核中心 ASR 失败: {e}")
+        if "ffmpeg" in str(e).lower() or "未安装" in str(e):
+            raise HTTPException(status_code=400, detail="ffmpeg 未安装，无法处理视频文件")
+    finally:
+        if os.path.isfile(audio_path):
+            try: os.remove(audio_path)
+            except: pass
+
+    return ""
