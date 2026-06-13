@@ -59,43 +59,62 @@ function reset() {
   success.value = false; error.value = ''
 }
 
-// === 语音录入（浏览器 Web Speech API，无需后端 ASR） ===
+// === 语音录入（录音 → 上传 → 后台转写 → 填入内容） ===
 const recording = ref(false)
 const recordingTime = ref(0)
+const voiceTranscribing = ref(false)
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
 let recordTimer: any = null
 
-const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-const recognition = SpeechRecognition ? new SpeechRecognition() : null
-if (recognition) {
-  recognition.continuous = true
-  recognition.interimResults = true
-  recognition.lang = 'zh-CN'
-  recognition.onresult = (e: any) => {
-    let transcript = ''
-    for (let i = e.resultIndex; i < e.results.length; i++) transcript += e.results[i][0].transcript
-    content.value = transcript
-    title.value = title.value || (transcript.length > 20 ? transcript.slice(0, 20) : transcript)
-  }
-  recognition.onerror = (e: any) => {
-    error.value = '语音识别出错：' + (e.error || '')
-    stopRecording()
-  }
-  recognition.onend = () => { recording.value = false }
-}
-
-function startRecording() {
-  if (!recognition) { error.value = '当前浏览器不支持语音识别（请使用 Chrome/Edge）'; return }
+async function startRecording() {
+  voiceTranscribing.value = false
+  if (!navigator.mediaDevices?.getUserMedia) { error.value = '当前浏览器不支持录音（请使用 Chrome/Edge）'; return }
   try {
-    recognition.start()
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+    mediaRecorder = rec
+    audioChunks = []
+    rec.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data) }
+    rec.onstop = async () => {
+      const blob = new Blob(audioChunks, { type: 'audio/webm' })
+      const fd = new FormData()
+      fd.append('file', blob, 'experience-voice.webm')
+      voiceTranscribing.value = true
+      try {
+        const { data } = await axios.post('/api/voice/upload', fd)
+        let retries = 0
+        const poll = setInterval(async () => {
+          retries++
+          try {
+            const sr = await axios.get(`/api/voice/status/${data.data.id}`)
+            if (sr.data.data.transcript_status === 'done') {
+              const txt = sr.data.data.transcript || ''
+              content.value = (content.value ? content.value + '\n' : '') + txt
+              title.value = title.value || (txt.length > 20 ? txt.slice(0, 20) : txt)
+              clearInterval(poll)
+              voiceTranscribing.value = false
+            } else if (sr.data.data.transcript_status === 'failed') {
+              error.value = '语音识别失败，请手动输入'
+              clearInterval(poll)
+              voiceTranscribing.value = false
+            }
+            if (retries > 40) { clearInterval(poll); voiceTranscribing.value = false }
+          } catch { clearInterval(poll); voiceTranscribing.value = false }
+        }, 2000)
+      } catch (e: any) { error.value = '语音上传失败'; voiceTranscribing.value = false }
+    }
+    rec.start(250)
     recording.value = true; recordingTime.value = 0; error.value = ''
     if (recordTimer) clearInterval(recordTimer)
     recordTimer = setInterval(() => recordingTime.value++, 1000)
-  } catch (e: any) { error.value = '语音识别启动失败：' + (e.message || '') }
+  } catch (e: any) { error.value = '麦克风权限被拒绝' }
 }
 
 function stopRecording() {
-  recognition?.stop()
+  mediaRecorder?.stop()
   recording.value = false
+  mediaRecorder?.stream.getTracks().forEach(t => t.stop())
   if (recordTimer) { clearInterval(recordTimer); recordTimer = null }
 }
 
@@ -117,15 +136,19 @@ function formatTime(s: number) { return `${Math.floor(s/60)}:${String(s%60).padS
         <textarea v-model="content" placeholder="详细描述您的经验或技巧，也可点击下方按钮语音录入..." class="form-input" style="width:100%;min-height:240px"></textarea>
         <!-- 语音录入 -->
         <div class="voice-bar">
-          <template v-if="!recording">
-            <button type="button" class="btn btn-sm btn-outline" @click="startRecording">🎤 语音录入</button>
-            <span class="voice-hint">点击后说话，Chrome/Edge 浏览器自动转写为文字</span>
-          </template>
-          <div v-else class="voice-recording">
-            <span class="voice-dot"></span>
-            <span>正在识别 {{ formatTime(recordingTime) }}...</span>
-            <button type="button" class="btn btn-sm btn-danger" @click="stopRecording">停止</button>
-          </div>
+          <button
+            v-if="!recording && !voiceTranscribing"
+            type="button" class="btn btn-sm btn-outline" @click="startRecording"
+          >🎤 语音录入</button>
+          <button
+            v-if="recording"
+            type="button"
+            class="aneng-mic-recording"
+            @click="stopRecording"
+            title="停止录音"
+          >🎤 {{ formatTime(recordingTime) }}</button>
+          <span v-if="voiceTranscribing" class="voice-trans-hint">⏳ 转写中...</span>
+          <span v-if="!recording && !voiceTranscribing" class="voice-hint">点击录音，自动转写为文字填入内容框</span>
         </div>
       </div>
 
@@ -194,9 +217,14 @@ function formatTime(s: number) { return `${Math.floor(s/60)}:${String(s%60).padS
 .success-actions { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
 .voice-bar { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
 .voice-hint { font-size: 12px; color: var(--text-sub); }
-.voice-recording { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: rgba(192,64,59,0.08); border: 1px solid var(--danger); border-radius: 8px; }
-.voice-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: pulse 1s infinite; }
+.voice-trans-hint { font-size: 12px; color: var(--primary); font-weight: 600; animation: pulse 1s infinite; }
+.aneng-mic-recording {
+  width: auto; height: 32px; border-radius: 16px; border: none; padding: 0 14px;
+  font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  background: var(--danger); color: #fff;
+  animation: mic-pulse 1s infinite;
+}
+@keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-.voice-recording span { font-size: 14px; font-weight: 600; color: var(--danger); }
 @media (max-width: 768px) { .form-row { flex-direction: column; } }
 </style>

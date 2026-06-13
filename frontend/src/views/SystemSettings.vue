@@ -14,23 +14,32 @@ const asrConfigured = ref(false)
 const asrProvider = ref('whisper')
 const asrSaving = ref(false)
 const asrMsg = ref('')
+const asrShowPlain = ref(false)
+
 async function fetchAsrConfig() {
   try {
-    const { data } = await axios.get('/api/settings/asr')
+    const { data } = await axios.get('/api/settings/asr', { params: { show_plain: asrShowPlain.value } })
     asrSecretId.value = data.data.secret_id || ''
+    if (asrShowPlain.value) asrShowPlain.value = false  // 查看一次后自动关闭
     asrConfigured.value = data.data.configured
     asrProvider.value = data.data.provider || 'whisper'
   } catch { /* */ }
 }
+
+function toggleShowPlain() {
+  asrShowPlain.value = !asrShowPlain.value
+  fetchAsrConfig()
+}
+
 async function saveAsrConfig() {
   asrSaving.value = true; asrMsg.value = ''
   try {
-    const params: any = { provider: asrProvider.value }
-    if (asrSecretId.value.trim() && !asrSecretId.value.includes('*')) params.secret_id = asrSecretId.value.trim()
-    if (asrSecretKey.value.trim() && !asrSecretKey.value.includes('*')) params.secret_key = asrSecretKey.value.trim()
-    await axios.put('/api/settings/asr', null, { params })
+    const body: any = { provider: asrProvider.value }
+    if (asrSecretId.value.trim() && !asrSecretId.value.includes('*')) body.secret_id = asrSecretId.value.trim()
+    if (asrSecretKey.value.trim() && !asrSecretKey.value.includes('*')) body.secret_key = asrSecretKey.value.trim()
+    await axios.put('/api/settings/asr', body)
     asrMsg.value = '✅ ASR 配置已保存，立即生效'
-    asrConfigured.value = asrProvider.value === 'whisper' || (!!params.secret_id && !!params.secret_key)
+    asrConfigured.value = asrProvider.value === 'whisper' || (!!body.secret_id && !!body.secret_key)
     asrSecretKey.value = ''
   } catch (e: any) { asrMsg.value = '❌ 保存失败：' + (e.response?.data?.detail || e.message) }
   finally { asrSaving.value = false }
@@ -264,7 +273,7 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories(); fetchAsrConfi
           ✅ ASR 密钥已配置，可正常使用
         </div>
         <div class="form-group">
-          <label>SecretId</label>
+          <label style="display:flex;justify-content:space-between;align-items:center"><span>SecretId</span><button type="button" class="btn btn-sm btn-outline" @click="toggleShowPlain" style="font-size:11px">{{ asrShowPlain ? '🔒 隐藏' : '👁 查看' }}</button></label>
           <input v-model="asrSecretId" class="form-input" style="width:100%" :placeholder="asrConfigured ? '已配置（修改请输入新值）' : '腾讯云 API 密钥 SecretId'" />
         </div>
         <div class="form-group">

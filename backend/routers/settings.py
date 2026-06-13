@@ -12,7 +12,7 @@ from cryptography.fernet import Fernet
 from config import LLM_ENCRYPTION_KEY
 from database import async_session
 from models import SystemConfig, KnowledgeCategory
-from schemas import ApiResponse
+from schemas import ApiResponse, ASRConfigUpdate
 from auth import require_admin
 from models import User
 from config import TENCENT_SECRET_ID, TENCENT_SECRET_KEY
@@ -88,8 +88,8 @@ def _asr_mask(val: str) -> str:
 
 
 @router.get("/settings/asr", response_model=ApiResponse)
-async def get_asr_config(_admin: User = Depends(require_admin)):
-    """获取腾讯云ASR配置（脱敏显示）"""
+async def get_asr_config(show_plain: bool = False, _admin: User = Depends(require_admin)):
+    """获取ASR配置。show_plain=true 返回明文密钥（仅管理员可查看）"""
     async with async_session() as db:
         id_r = await db.execute(select(SystemConfig).where(SystemConfig.config_key == "asr_secret_id"))
         key_r = await db.execute(select(SystemConfig).where(SystemConfig.config_key == "asr_secret_key"))
@@ -101,47 +101,44 @@ async def get_asr_config(_admin: User = Depends(require_admin)):
         s_key = _asr_decrypt(secret_key_cfg.config_value) if secret_key_cfg else ""
         provider = (provider_cfg.config_value if provider_cfg else "whisper") or "whisper"
     return ApiResponse(data={
-        "secret_id": _asr_mask(s_id) if s_id else "",
+        "secret_id": s_id if show_plain else _asr_mask(s_id),
         "secret_id_set": bool(s_id),
+        "secret_key": s_key if show_plain else "",
         "secret_key_set": bool(s_key),
-        "configured": bool(s_id and s_key) if provider == "tencent" else True,  # whisper 无需密钥
+        "configured": bool(s_id and s_key) if provider == "tencent" else True,
         "provider": provider,
     })
 
 
 @router.put("/settings/asr", response_model=ApiResponse)
 async def update_asr_config(
-    secret_id: str = Query("", max_length=200),
-    secret_key: str = Query("", max_length=200),
-    provider: str = Query("", max_length=20),
+    body: ASRConfigUpdate,
     _admin: User = Depends(require_admin),
 ):
-    """更新腾讯云ASR密钥 / ASR引擎选择"""
+    """更新ASR密钥/引擎（密钥通过 JSON body 传递，不暴露在 URL）"""
     async with async_session() as db:
-        if secret_id and secret_id.strip() and not secret_id.startswith("*"):
+        if body.secret_id.strip() and not body.secret_id.startswith("*"):
             id_r = await db.execute(select(SystemConfig).where(SystemConfig.config_key == "asr_secret_id"))
             cfg = id_r.scalar_one_or_none()
             if cfg:
-                cfg.config_value = _asr_encrypt(secret_id.strip())
+                cfg.config_value = _asr_encrypt(body.secret_id.strip())
             else:
-                db.add(SystemConfig(config_key="asr_secret_id", config_value=_asr_encrypt(secret_id.strip()), config_type="encrypted", description="腾讯云ASR SecretId"))
-        if secret_key and secret_key.strip() and not secret_key.startswith("*"):
+                db.add(SystemConfig(config_key="asr_secret_id", config_value=_asr_encrypt(body.secret_id.strip()), config_type="encrypted", description="Tencent ASR SecretId"))
+        if body.secret_key.strip() and not body.secret_key.startswith("*"):
             key_r = await db.execute(select(SystemConfig).where(SystemConfig.config_key == "asr_secret_key"))
             cfg2 = key_r.scalar_one_or_none()
             if cfg2:
-                cfg2.config_value = _asr_encrypt(secret_key.strip())
+                cfg2.config_value = _asr_encrypt(body.secret_key.strip())
             else:
-                db.add(SystemConfig(config_key="asr_secret_key", config_value=_asr_encrypt(secret_key.strip()), config_type="encrypted", description="腾讯云ASR SecretKey"))
-        # 引擎选择
-        if provider and provider in ("tencent", "whisper"):
+                db.add(SystemConfig(config_key="asr_secret_key", config_value=_asr_encrypt(body.secret_key.strip()), config_type="encrypted", description="Tencent ASR SecretKey"))
+        if body.provider and body.provider in ("tencent", "whisper"):
             pv_r = await db.execute(select(SystemConfig).where(SystemConfig.config_key == "asr_provider"))
             pv_cfg = pv_r.scalar_one_or_none()
             if pv_cfg:
-                pv_cfg.config_value = provider
+                pv_cfg.config_value = body.provider
             else:
-                db.add(SystemConfig(config_key="asr_provider", config_value=provider, config_type="string", description="ASR引擎选择 tencent/whisper"))
+                db.add(SystemConfig(config_key="asr_provider", config_value=body.provider, config_type="string", description="ASR engine tencent/whisper"))
         await db.commit()
-    # 清除 ASR 缓存
     from asr import reset_asr_cache
     reset_asr_cache()
     return ApiResponse(msg="ASR配置已保存，立即生效")

@@ -9,6 +9,7 @@ backend/logs/
 # Node
 node_modules/
 frontend/dist/
+backend/static/
 
 # IDE
 .vscode/

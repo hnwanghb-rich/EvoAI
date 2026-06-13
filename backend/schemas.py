@@ -237,6 +237,12 @@ class ExamPaperManualCreate(BaseModel):
     duration_minutes: int = 60
 
 
+class ASRConfigUpdate(BaseModel):
+    secret_id: str = ""
+    secret_key: str = ""
+    provider: str = ""
+
+
 class ExamPaperUpdate(BaseModel):
     title: Optional[str] = None
     time_mode: Optional[str] = None

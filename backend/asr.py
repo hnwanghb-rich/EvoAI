@@ -3,6 +3,7 @@ ASR 语音识别模块 —— 统一入口，根据系统配置选择引擎
 支持：tencent（腾讯云）/ whisper（本地 faster-whisper）
 """
 import os
+import uuid
 import json
 import time
 import hmac
@@ -111,9 +112,10 @@ def _tc3_sign(method: str, action: str, payload: dict, secret_id: str = "", secr
     if not secret_id or not secret_key:
         raise ValueError("secret_id and secret_key are required")
     timestamp = int(time.time())
-    date_str = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
+    date_str = datetime.fromtimestamp(timestamp, tz=__import__("datetime").timezone.utc).strftime("%Y-%m-%d")
     ct = "application/json; charset=utf-8"
-    payload_bytes = json.dumps(payload).encode("utf-8")
+    payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    logger.debug(f"TC3 sign: timestamp={timestamp} date={date_str} action={action} body_len={len(payload_bytes)}")
     hashed_payload = hashlib.sha256(payload_bytes).hexdigest()
 
     canonical_headers = f"content-type:{ct}\nhost:{ASR_ENDPOINT}\nx-tc-action:{action.lower()}\n"
@@ -147,7 +149,7 @@ def _tc3_sign(method: str, action: str, payload: dict, secret_id: str = "", secr
         "X-TC-Timestamp": str(timestamp),
         "X-TC-Version": VERSION,
         "X-TC-Region": REGION,
-    }
+    }, payload_bytes
 
 
 async def sentence_recognition(audio_path: str, engine_type: str = "16k_zh") -> str:
@@ -162,21 +164,26 @@ async def sentence_recognition(audio_path: str, engine_type: str = "16k_zh") -> 
         audio_data = audio_data[:6 * 1024 * 1024]
 
     audio_base64 = base64.b64encode(audio_data).decode("utf-8")
+    fmt = os.path.splitext(audio_path)[1].replace(".", "")
+    if fmt not in ("wav", "pcm", "mp3", "amr", "silk", "m4a", "ogg", "opus"):
+        fmt = "wav"
     payload = {
-        "EngSerViceType": engine_type,
-        "SourceType": 1,
-        "VoiceFormat": os.path.splitext(audio_path)[1].replace(".", "") or "mp3",
         "Data": audio_base64,
         "DataLen": len(audio_data),
+        "EngSerViceType": engine_type,
+        "SourceType": 1,
+        "VoiceFormat": fmt,
     }
-    headers = _tc3_sign("POST", "SentenceRecognition", payload, sid, skey)
+    headers, body_bytes = _tc3_sign("POST", "SentenceRecognition", payload, sid, skey)
+    logger.info(f"ASR payload keys: {list(payload.keys())}")
+    logger.info(f"ASR body len: {len(body_bytes)}, DataLen: {payload.get('DataLen')}")
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"https://{ASR_ENDPOINT}/",
                 headers=headers,
-                json=payload,
+                content=body_bytes,
             )
             resp.raise_for_status()
             result = resp.json()
@@ -203,10 +210,10 @@ async def create_rec_task(audio_url: str, engine_type: str = "16k_zh") -> int | 
         "SourceType": 0,
         "Url": audio_url,
     }
-    headers = _tc3_sign("POST", "CreateRecTask", payload, sid, skey)
+    headers, body_bytes = _tc3_sign("POST", "CreateRecTask", payload, sid, skey)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"https://{ASR_ENDPOINT}/", headers=headers, json=payload)
+            resp = await client.post(f"https://{ASR_ENDPOINT}/", headers=headers, content=body_bytes)
             resp.raise_for_status()
             result = resp.json()
             if "Response" in result:
@@ -224,10 +231,10 @@ async def query_rec_task(task_id: int) -> dict | None:
     sid, skey = await _load_keys_from_db()
     if not sid or not skey:
         return None
-    headers = _tc3_sign("POST", "DescribeTaskStatus", {"TaskId": task_id}, sid, skey)
+    headers, body_bytes = _tc3_sign("POST", "DescribeTaskStatus", {"TaskId": task_id}, sid, skey)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"https://{ASR_ENDPOINT}/", headers=headers, json={"TaskId": task_id})
+            resp = await client.post(f"https://{ASR_ENDPOINT}/", headers=headers, content=body_bytes)
             resp.raise_for_status()
             result = resp.json()
             if "Response" not in result:
@@ -295,3 +302,48 @@ async def transcribe_audio(audio_path: str) -> list[dict]:
             try: os.remove(chunk_path)
             except: pass
         return segments
+import asyncio
+
+_LOCAL_WHISPER_MODEL = None
+
+def _get_local_whisper():
+    """懒加载 faster-whisper 模型"""
+    global _LOCAL_WHISPER_MODEL
+    if _LOCAL_WHISPER_MODEL is None:
+        from faster_whisper import WhisperModel
+        logger.info("正在加载本地 Whisper 模型 (small)...")
+        _LOCAL_WHISPER_MODEL = WhisperModel("small", device="cpu", compute_type="int8")
+        logger.info("本地 Whisper 模型加载完成")
+    return _LOCAL_WHISPER_MODEL
+
+def _run_local_whisper(model, audio_path: str) -> str:
+    """同步执行转写，返回纯文本"""
+    segments_out = []
+    gen_segments, _ = model.transcribe(audio_path, beam_size=3, vad_filter=True,
+        language="zh", initial_prompt="合群汽车集团，销售，技术，客服，维修，保养")
+    for seg in gen_segments:
+        segments_out.append(seg.text.strip())
+    return " ".join(segments_out)
+
+async def transcribe_local(audio_path: str) -> str:
+    """用本地 faster-whisper 离线转写，返回纯文本"""
+    import subprocess, tempfile
+    trans_path = audio_path
+    tmp_file = None
+    # 浏览器录音 webm/opus → ffmpeg 转 16kHz WAV（Whisper 不认 webm）
+    if not audio_path.lower().endswith('.wav'):
+        tmp_file = os.path.join(tempfile.gettempdir(), f"asr_{uuid.uuid4().hex}.wav")
+        r = subprocess.run(["ffmpeg", "-i", audio_path, "-ar", "16000", "-ac", "1", "-y", tmp_file], capture_output=True, timeout=30)
+        if r.returncode == 0 and os.path.getsize(tmp_file) > 0:
+            trans_path = tmp_file
+    try:
+        model = await asyncio.to_thread(_get_local_whisper)
+        text = await asyncio.to_thread(_run_local_whisper, model, trans_path)
+        return text.strip() if text else ""
+    except Exception as e:
+        logger.warning(f"Whisper 转写失败: {type(e).__name__}: {e}")
+        return ""
+    finally:
+        if tmp_file:
+            try: os.remove(tmp_file)
+            except: pass

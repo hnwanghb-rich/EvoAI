@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, case
 
 from database import async_session
 from models import (
@@ -89,7 +89,7 @@ async def get_today_question(user: User = Depends(get_current_user)):
                 conditions.append(DailyQuestion.category_id.in_(pos_cat_ids))
             if pos_kb:
                 # 兼容：target_position 匹配岗位知识库
-                kb_values = [kb for kb in pos_kb if kb in ("public", "sales", "tech", "service")]
+                kb_values = [kb for kb in pos_kb if kb in ("sales", "tech", "service")]
                 if kb_values:
                     conditions.append(DailyQuestion.target_position.in_(kb_values))
                 if "public" in pos_kb:
@@ -235,6 +235,43 @@ async def answer_history(user: User = Depends(get_current_user)):
             for r in rows_r.scalars().all()
         ]
     return ApiResponse(data=items)
+
+
+@router.get("/questions/history-stats", response_model=ApiResponse)
+async def answer_history_stats(user: User = Depends(get_current_user)):
+    """每日一题答题汇总：按知识类别聚合"""
+    async with async_session() as db:
+        # 用户每日一题记录 → 通过 knowledge_entry → category 汇总
+        cat_rows = await db.execute(
+            select(
+                KnowledgeCategory.id,
+                KnowledgeCategory.name,
+                KnowledgeCategory.icon,
+                func.count(LearningRecord.id),
+                func.sum(func.case((LearningRecord.score >= 100, 1), else_=0)),
+            )
+            .join(KnowledgeEntry, KnowledgeEntry.id == LearningRecord.knowledge_id)
+            .join(KnowledgeCategory, KnowledgeCategory.id == KnowledgeEntry.category_id)
+            .where(
+                LearningRecord.user_id == user.id,
+                LearningRecord.learn_type == "test",
+            )
+            .group_by(KnowledgeCategory.id, KnowledgeCategory.name, KnowledgeCategory.icon)
+            .order_by(func.count(LearningRecord.id).desc())
+        )
+        items = [
+            {
+                "category_id": r[0],
+                "category_name": r[1],
+                "icon": r[2],
+                "total_questions": r[3],
+                "correct_count": r[4] or 0,
+                "accuracy": round((r[4] or 0) / r[3] * 100, 1) if r[3] > 0 else 0,
+            }
+            for r in cat_rows.all()
+            if r[3] > 0
+        ]
+    return ApiResponse(data={"items": items, "total": sum(i["total_questions"] for i in items)})
 
 
 # ============================================================
