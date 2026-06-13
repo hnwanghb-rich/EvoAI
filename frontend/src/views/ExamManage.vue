@@ -69,8 +69,14 @@ interface PublicPaper {
 }
 const publicPapers = ref<PublicPaper[]>([])
 const publicLoading = ref(false)
+const examTimeFilter = ref<'all' | 'not_started' | 'in_progress' | 'ended'>('all')
 let countdownTimer: any = null
-const nowTs = ref(Date.now())  // 用于驱动倒计时刷新
+const nowTs = ref(Date.now())
+
+const filteredPublicPapers = computed(() => {
+  if (examTimeFilter.value === 'all') return publicPapers.value
+  return publicPapers.value.filter(p => timeStatus(p) === examTimeFilter.value)
+})
 
 // ===== Tab 3: 我的考试（所有人）=====
 interface AvailableExam { id: number; title: string; target_type: string; time_mode: string; start_time: string | null; end_time: string | null; duration_minutes: number; total_questions: number; already_submitted: boolean; in_window?: boolean }
@@ -396,29 +402,44 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
       <div class="em-head">
         <h2 class="page-title">📢 公司考试</h2>
       </div>
+      <!-- 时间筛选 -->
+      <div class="exam-filter-bar">
+        <button :class="{ active: examTimeFilter === 'all' }" @click="examTimeFilter = 'all'">全部 ({{ publicPapers.length }})</button>
+        <button :class="{ active: examTimeFilter === 'not_started' }" @click="examTimeFilter = 'not_started'">⏳ 未开始</button>
+        <button :class="{ active: examTimeFilter === 'in_progress' }" @click="examTimeFilter = 'in_progress'">🟢 进行中</button>
+        <button :class="{ active: examTimeFilter === 'ended' }" @click="examTimeFilter = 'ended'">⛔ 已结束</button>
+      </div>
+
       <div v-if="publicLoading" style="text-align:center;padding:40px;color:var(--text-sub)">加载中...</div>
       <div v-else-if="publicPapers.length === 0" style="text-align:center;padding:60px;color:var(--text-sub)"><div style="font-size:48px;margin-bottom:12px">📭</div><p>暂无考试</p></div>
       <div v-else class="exam-list">
-        <div v-for="p in publicPapers" :key="p.id" class="exam-card card" :class="{ 'exam-disabled': !p.can_enter || p.already_submitted }">
-          <div class="exam-card-info">
-            <h3>{{ p.title }}</h3>
-            <div class="exam-card-meta">
-              <span>🎯 {{ targetLabel[p.target_type] || '全员' }}{{ p.target_value ? ' · ' + (posLabel[p.target_value] || p.target_value) : '' }}</span>
-              <span>📝 {{ p.total_questions }} 题</span>
-              <span>⏱ {{ p.duration_minutes }} 分钟</span>
+        <div v-for="p in filteredPublicPapers" :key="p.id" class="exam-card card">
+          <div class="exam-card-left">
+            <!-- 时间状态标签（每个考试都有） -->
+            <div class="exam-status-col" :class="'status-' + timeStatus(p)">
+              <span class="exam-status-icon">{{ timeStatus(p) === 'not_started' ? '⏳' : timeStatus(p) === 'in_progress' ? '🟢' : timeStatus(p) === 'ended' ? '⛔' : '🟢' }}</span>
+              <span class="exam-status-label">{{ timeStatus(p) === 'not_started' ? '未开始' : timeStatus(p) === 'in_progress' ? '进行中' : timeStatus(p) === 'ended' ? '已结束' : '已开始' }}</span>
             </div>
-            <div v-if="p.time_mode === 'scheduled'" class="exam-time-info">
-              <span class="exam-time-range">📅 {{ formatTimeRange(p) }}</span>
-              <span class="time-status-badge" :class="'ts-' + timeStatus(p)">
-                {{ timeStatus(p) === 'not_started' ? '⏳ 未开始' : timeStatus(p) === 'in_progress' ? '🟢 进行中' : timeStatus(p) === 'ended' ? '⛔ 已结束' : '随时可考' }}
-              </span>
-              <span class="countdown-badge" :class="{ urgent: timeStatus(p) === 'ended' }">{{ countdownText(p) }}</span>
+            <div class="exam-card-body">
+              <h3>{{ p.title }}</h3>
+              <div class="exam-card-meta">
+                <span>🎯 {{ targetLabel[p.target_type] || '全员' }}{{ p.target_value ? ' · ' + (posLabel[p.target_value] || p.target_value) : '' }}</span>
+                <span>📝 {{ p.total_questions }} 题</span>
+                <span>⏱ {{ p.duration_minutes }} 分钟</span>
+              </div>
+              <div v-if="p.time_mode === 'scheduled'" class="exam-time-info">
+                <span class="exam-time-range">📅 {{ formatTimeRange(p) }}</span>
+                <span class="countdown-badge">{{ countdownText(p) }}</span>
+              </div>
             </div>
-            <div v-else class="exam-time-info"><span class="time-status-badge ts-anytime">🟢 随时可考</span></div>
           </div>
-          <button v-if="p.already_submitted" class="btn btn-sm" disabled>✅ 已交卷</button>
-          <button v-else-if="!p.can_enter" class="btn btn-sm" disabled>🚫 不可进入</button>
-          <button v-else class="btn" @click="enterExamPublic(p)">进入考试</button>
+          <div class="exam-card-action">
+            <button v-if="p.already_submitted" class="btn btn-sm" disabled>✅ 已交卷</button>
+            <button v-else-if="!p.can_enter" class="btn btn-sm" disabled>
+              {{ timeStatus(p) === 'not_started' ? '⏳ 未到时间' : timeStatus(p) === 'ended' ? '⛔ 已截止' : '🚫 无权限' }}
+            </button>
+            <button v-else class="btn" @click="enterExamPublic(p)">进入考试</button>
+          </div>
         </div>
       </div>
     </div>
@@ -665,20 +686,32 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
 .em-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
 
 /* 考试信息 / 我的考试 通用列表 */
+.exam-filter-bar { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+.exam-filter-bar button { padding: 5px 16px; border: 1px solid var(--border); border-radius: 14px; font-size: 12px; background: none; color: var(--text-sub); cursor: pointer; transition: all 0.15s; }
+.exam-filter-bar button:hover { border-color: var(--primary); color: var(--primary); }
+.exam-filter-bar button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
 .exam-list { display: flex; flex-direction: column; gap: 10px; }
-.exam-card { padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+.exam-card { padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .exam-card.exam-disabled { opacity: 0.55; }
-.exam-card-info h3 { margin: 0 0 6px; font-size: 15px; color: var(--text-main); }
+.exam-card-left { display: flex; gap: 14px; align-items: flex-start; flex: 1; min-width: 0; }
+.exam-card-body { flex: 1; min-width: 0; }
+.exam-card-body h3 { margin: 0 0 6px; font-size: 15px; color: var(--text-main); }
 .exam-card-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-sub); align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.exam-card-action { flex-shrink: 0; }
+
+/* 左侧状态标签列 */
+.exam-status-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 56px; padding: 6px 8px; border-radius: 8px; }
+.exam-status-col.status-anytime,
+.exam-status-col.status-in_progress { background: rgba(122,166,104,0.08); }
+.exam-status-col.status-not_started { background: rgba(232,130,74,0.08); }
+.exam-status-col.status-ended { background: rgba(192,64,59,0.06); }
+.exam-status-icon { font-size: 18px; }
+.exam-status-label { font-size: 11px; font-weight: 600; color: var(--text-main); white-space: nowrap; }
+
 .exam-time-info { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .exam-time-range { color: var(--text-sub); }
-.time-status-badge { padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-.time-status-badge.ts-not_started { background: rgba(232,130,74,0.1); color: var(--accent); }
-.time-status-badge.ts-in_progress { background: rgba(122,166,104,0.1); color: var(--success); }
-.time-status-badge.ts-ended { background: rgba(192,64,59,0.08); color: var(--danger); }
-.time-status-badge.ts-anytime { background: rgba(122,166,104,0.1); color: var(--success); }
 .countdown-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--bg-main); color: var(--primary); font-weight: 600; }
-.countdown-badge.urgent { color: var(--danger); }
 
 /* 答题界面 */
 .exam-top-bar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; position: sticky; top: 0; z-index: 100; margin-bottom: 16px; }

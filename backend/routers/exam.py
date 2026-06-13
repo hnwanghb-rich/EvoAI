@@ -3,7 +3,7 @@
 """
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -366,7 +366,7 @@ async def question_pool(
 async def public_papers(user: User = Depends(get_current_user)):
     """所有用户可查的公开试卷列表（不含试题详情）"""
     async with async_session() as db:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         pos = user.position.value if user.position else ""
 
         result = await db.execute(
@@ -427,7 +427,7 @@ async def public_papers(user: User = Depends(get_current_user)):
 async def available_exams(user: User = Depends(get_current_user)):
     """当前用户可参加的考试"""
     async with async_session() as db:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         pos = user.position.value if user.position else ""
 
         # 查询所有 active 试卷
@@ -502,7 +502,7 @@ async def start_exam(
             raise HTTPException(status_code=404, detail="试卷不存在或已归档")
 
         # 检查时间
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if paper.time_mode == "scheduled":
             if paper.start_time and now < paper.start_time:
                 raise HTTPException(status_code=400, detail="考试尚未开始")
@@ -602,7 +602,7 @@ async def submit_exam(
         attempt.score = score
         attempt.correct_count = correct_count
         attempt.total_questions = total
-        attempt.submitted_at = datetime.utcnow()
+        attempt.submitted_at = datetime.now(timezone.utc)
         attempt.status = "submitted"
         await db.commit()
 
