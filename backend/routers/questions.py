@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_, case
+from sqlalchemy import select, func, or_
 
 from database import async_session
 from models import (
@@ -241,14 +241,14 @@ async def answer_history(user: User = Depends(get_current_user)):
 async def answer_history_stats(user: User = Depends(get_current_user)):
     """每日一题答题汇总：按知识类别聚合"""
     async with async_session() as db:
-        # 用户每日一题记录 → 通过 knowledge_entry → category 汇总
-        cat_rows = await db.execute(
+        # 用户每日一题记录 → 按分类汇总
+        # 总答题数
+        total_rows = await db.execute(
             select(
                 KnowledgeCategory.id,
                 KnowledgeCategory.name,
                 KnowledgeCategory.icon,
                 func.count(LearningRecord.id),
-                func.sum(func.case((LearningRecord.score >= 100, 1), else_=0)),
             )
             .join(KnowledgeEntry, KnowledgeEntry.id == LearningRecord.knowledge_id)
             .join(KnowledgeCategory, KnowledgeCategory.id == KnowledgeEntry.category_id)
@@ -259,17 +259,37 @@ async def answer_history_stats(user: User = Depends(get_current_user)):
             .group_by(KnowledgeCategory.id, KnowledgeCategory.name, KnowledgeCategory.icon)
             .order_by(func.count(LearningRecord.id).desc())
         )
+        totals = {}
+        for r in total_rows.all():
+            totals[r[0]] = {"name": r[1], "icon": r[2], "total": r[3]}
+
+        # 正确数
+        correct_rows = await db.execute(
+            select(
+                KnowledgeCategory.id,
+                func.count(LearningRecord.id),
+            )
+            .join(KnowledgeEntry, KnowledgeEntry.id == LearningRecord.knowledge_id)
+            .join(KnowledgeCategory, KnowledgeCategory.id == KnowledgeEntry.category_id)
+            .where(
+                LearningRecord.user_id == user.id,
+                LearningRecord.learn_type == "test",
+                LearningRecord.score >= 100,
+            )
+            .group_by(KnowledgeCategory.id)
+        )
+        corrects = {r[0]: r[1] for r in correct_rows.all()}
+
         items = [
             {
-                "category_id": r[0],
-                "category_name": r[1],
-                "icon": r[2],
-                "total_questions": r[3],
-                "correct_count": r[4] or 0,
-                "accuracy": round((r[4] or 0) / r[3] * 100, 1) if r[3] > 0 else 0,
+                "category_id": cid,
+                "category_name": v["name"],
+                "icon": v["icon"],
+                "total_questions": v["total"],
+                "correct_count": corrects.get(cid, 0),
+                "accuracy": round(corrects.get(cid, 0) / v["total"] * 100, 1) if v["total"] > 0 else 0,
             }
-            for r in cat_rows.all()
-            if r[3] > 0
+            for cid, v in totals.items()
         ]
     return ApiResponse(data={"items": items, "total": sum(i["total_questions"] for i in items)})
 
