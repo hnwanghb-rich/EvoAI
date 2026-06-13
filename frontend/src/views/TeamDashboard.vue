@@ -18,6 +18,13 @@ const teamPosition = ref('')
 
 const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服', clerk: '文员' }
 
+const teamTitle = computed(() => {
+  if (teamPosition.value && posLabel[teamPosition.value]) {
+    return '团队看板 · ' + posLabel[teamPosition.value]
+  }
+  return '团队看板 · 全公司'
+})
+
 // 维度选择
 const selectedCats = ref<Set<number>>(new Set())
 const DIM_KEY = 'team_radar_dims'
@@ -80,7 +87,7 @@ onMounted(fetchData)
 <template>
   <div class="td-page">
     <div class="td-top-bar">
-      <h2 class="page-title">团队看板 · {{ deptName }}</h2>
+      <h2 class="page-title">{{ teamTitle }}</h2>
       <div class="td-pos-filter">
         <button :class="{ active: teamPosition === '' }" @click="teamPosition = ''; fetchData()">全部</button>
         <button :class="{ active: teamPosition === 'sales' }" @click="teamPosition = 'sales'; fetchData()">💼 销售</button>
