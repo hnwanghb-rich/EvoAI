@@ -472,3 +472,15 @@ class ExamAttempt(Base):
 
     user = relationship("User")
     paper = relationship("ExamPaper")
+
+
+class PositionCapability(Base):
+    __tablename__ = "position_capabilities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    position: Mapped[str] = mapped_column(String(20), nullable=False)
+    category_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("knowledge_categories.id", ondelete="CASCADE"), nullable=False
+    )
+
+    category = relationship("KnowledgeCategory")

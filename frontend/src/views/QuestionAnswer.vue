@@ -10,6 +10,7 @@ const question = ref<Question | null>(null)
 const result = ref<Result | null>(null)
 const userAnswer = ref('')
 const selectedOption = ref('')
+const selectedOptions = ref<string[]>([])
 const submitting = ref(false)
 const noQuestion = ref(false)
 
@@ -36,8 +37,10 @@ async function fetchToday() {
 async function submitAnswer() {
   if (!question.value) return
   let answer = ''
-  if (question.value.question_type === 'single_choice' || question.value.question_type === 'multi_choice') {
+  if (question.value.question_type === 'single_choice') {
     answer = selectedOption.value
+  } else if (question.value.question_type === 'multi_choice') {
+    answer = selectedOptions.value.join(',')
   } else if (question.value.question_type === 'true_false') {
     answer = selectedOption.value
   } else {
@@ -61,6 +64,7 @@ function nextQuestion() {
   result.value = null
   userAnswer.value = ''
   selectedOption.value = ''
+  selectedOptions.value = []
   noQuestion.value = false
   fetchToday()
 }
@@ -103,9 +107,14 @@ onMounted(fetchToday)
 
         <!-- 多选题 -->
         <template v-else-if="question.question_type === 'multi_choice'">
-          <div class="qa-options" v-if="!result" v-for="(label, key) in question.options" :key="key">
-            <label class="qa-option checkbox">
-              <input type="checkbox" :value="key" v-model="selectedOption" />
+          <div class="qa-options" v-if="!result">
+            <label
+              v-for="(label, key) in question.options"
+              :key="key"
+              class="qa-option"
+              :class="{ selected: selectedOptions.includes(key) }"
+            >
+              <input type="checkbox" :value="key" v-model="selectedOptions" />
               <span>{{ key }}. {{ label }}</span>
             </label>
           </div>

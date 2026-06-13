@@ -164,6 +164,8 @@ from routers.voice import router as voice_router
 app.include_router(voice_router, prefix="/api")
 from routers.exam import router as exam_router
 app.include_router(exam_router, prefix="/api")
+from routers.position_capability import router as position_capability_router
+app.include_router(position_capability_router, prefix="/api")
 
 # 生产环境：挂载前端静态文件（必须在所有 API 路由之后）
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

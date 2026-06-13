@@ -98,3 +98,12 @@ CREATE TABLE IF NOT EXISTS exam_attempts (
 -- GRANT USAGE ON SEQUENCE exam_papers_id_seq TO hqevoai;
 -- GRANT USAGE ON SEQUENCE exam_papers_questions_id_seq TO hqevoai;
 -- GRANT USAGE ON SEQUENCE exam_attempts_id_seq TO hqevoai;
+
+-- [2026-06-13] 岗位知识能力：position_capabilities
+-- 原因：用户管理需要配置各岗位对应掌握的知识分类
+CREATE TABLE IF NOT EXISTS position_capabilities (
+    id SERIAL PRIMARY KEY,
+    position VARCHAR(20) NOT NULL,
+    category_id INT NOT NULL REFERENCES knowledge_categories(id) ON DELETE CASCADE,
+    UNIQUE (position, category_id)
+);

@@ -10,27 +10,20 @@ const auth = useAuthStore()
 const skin = useSkinStore()
 
 interface MySubmission { id: number; title: string; status: string; audit_comment: string | null; created_at: string | null }
-interface Favorite { id: number; title: string; view_count: number; knowledge_base: string }
-
 const points = ref(0)
 const companyRank = ref(0)
 const deptRank = ref(0)
 const submissions = ref<MySubmission[]>([])
-const favorites = ref<Favorite[]>([])
 const loading = ref(true)
 const showSkinPanel = ref(false)
 
-const kbLabel: Record<string, string> = { public: '公共', sales: '销售', tech: '技术', service: '客服' }
 const statusLabel: Record<string, string> = { draft: '草稿', pending: '待审', approved: '已通过', rejected: '已驳回', archived: '已归档' }
 
 async function fetchData() {
   try {
-    const [dr, sr, fr] = await Promise.all([
+    const [dr, sr] = await Promise.all([
       axios.get('/api/dashboard/personal'),
-      // 获取我的提交（用搜索接口查 source_person）
       axios.get('/api/knowledge', { params: { page_size: 50, sort_by: 'created_at' } }),
-      // 收藏列表（localStorage）
-      Promise.resolve(),
     ])
     const d = dr.data.data
     points.value = d.my_points
@@ -44,19 +37,6 @@ async function fetchData() {
         id: i.id, title: i.title, status: i.status || 'draft',
         audit_comment: null, created_at: i.created_at,
       }))
-
-    // 收藏
-    const favIds: number[] = JSON.parse(localStorage.getItem('favorites') || '[]')
-    if (favIds.length > 0) {
-      const favItems: Favorite[] = []
-      for (const id of favIds.slice(0, 10)) {
-        try {
-          const { data } = await axios.get(`/api/knowledge/${id}`)
-          favItems.push({ id, title: data.data.title, view_count: data.data.view_count, knowledge_base: data.data.knowledge_base })
-        } catch { /* skip */ }
-      }
-      favorites.value = favItems
-    }
   } finally {
     loading.value = false
   }
@@ -141,18 +121,6 @@ onMounted(fetchData)
         </div>
       </div>
 
-      <!-- 我的收藏 -->
-      <div class="card" style="margin-top:12px">
-        <h3>⭐ 我的收藏</h3>
-        <div v-if="favorites.length === 0" class="empty-hint">暂无收藏</div>
-        <div v-else class="fav-list">
-          <div v-for="f in favorites" :key="f.id" class="fav-item" @click="goKnowledge(f.id)">
-            <span>{{ f.title }}</span>
-            <span class="fav-meta">{{ kbLabel[f.knowledge_base] || f.knowledge_base }} | 👁 {{ f.view_count }}</span>
-          </div>
-        </div>
-      </div>
-
       <!-- 退出 -->
       <div style="text-align:center;margin-top:24px">
         <button class="btn btn-outline" @click="doLogout">退出登录</button>
@@ -203,10 +171,6 @@ onMounted(fetchData)
 .sub-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub-tag { font-size: 11px; font-weight: 600; flex-shrink: 0; }
 .sub-date { font-size: 11px; color: var(--text-sub); flex-shrink: 0; }
-
-.fav-list { display: flex; flex-direction: column; gap: 6px; }
-.fav-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; }
-.fav-meta { font-size: 11px; color: var(--text-sub); flex-shrink: 0; }
 
 @media (max-width: 768px) {
   .pf-points { flex-direction: column; }
