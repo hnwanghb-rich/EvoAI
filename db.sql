@@ -47,3 +47,54 @@ UPDATE knowledge_categories SET description = '续保客户筛选、保险产品
 UPDATE knowledge_categories SET description = '售后三日回访、保养到期提醒、满意度调研及客户关怀活动标准' WHERE name = '客户回访规范';
 UPDATE knowledge_categories SET description = '会员权益体系、积分规则、会员日活动策划及VIP客户专属服务标准' WHERE name = '会员服务管理';
 UPDATE knowledge_categories SET description = '配件入库出库流程、库存预警、常用件备货策略及呆滞件处理规范' WHERE name = '配件仓储管理';
+
+-- [2026-06-13] knowledge_categories 补 is_active 列
+-- 原因：知识类别管理 Tab 需要软删除（停用）能力
+--       有试题/知识引用的分类只能停用不能物理删除
+ALTER TABLE knowledge_categories ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+-- [2026-06-13] 组卷出题系统：exam_papers / exam_papers_questions / exam_attempts
+-- 原因：AI出题改为组卷出题，需要试卷管理 + 答卷记录
+CREATE TABLE IF NOT EXISTS exam_papers (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    target_type VARCHAR(20) DEFAULT 'all',
+    target_value VARCHAR(50),
+    time_mode VARCHAR(20) DEFAULT 'anytime',
+    start_time TIMESTAMPTZ,
+    end_time TIMESTAMPTZ,
+    duration_minutes INT DEFAULT 60,
+    total_questions INT DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'active',
+    created_by INT REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS exam_papers_questions (
+    id SERIAL PRIMARY KEY,
+    paper_id INT REFERENCES exam_papers(id) ON DELETE CASCADE,
+    question_id INT REFERENCES daily_questions(id) ON DELETE CASCADE,
+    sort_order INT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS exam_attempts (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    paper_id INT REFERENCES exam_papers(id) ON DELETE CASCADE,
+    answers JSONB DEFAULT '{}',
+    score INT DEFAULT 0,
+    total_questions INT DEFAULT 0,
+    correct_count INT DEFAULT 0,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    submitted_at TIMESTAMPTZ,
+    status VARCHAR(20) DEFAULT 'started'
+);
+
+-- 授权 hqevoai 用户（非 postgres 创建时需单独执行）
+-- GRANT ALL ON TABLE exam_papers TO hqevoai;
+-- GRANT ALL ON TABLE exam_papers_questions TO hqevoai;
+-- GRANT ALL ON TABLE exam_attempts TO hqevoai;
+-- GRANT USAGE ON SEQUENCE exam_papers_id_seq TO hqevoai;
+-- GRANT USAGE ON SEQUENCE exam_papers_questions_id_seq TO hqevoai;
+-- GRANT USAGE ON SEQUENCE exam_attempts_id_seq TO hqevoai;

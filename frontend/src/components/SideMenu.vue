@@ -15,6 +15,7 @@ const allMenus: MenuItem[] = [
   { path: '/personal-dashboard', label: '个人看板', icon: '📊', roles: ['staff'] },
   { path: '/learning', label: '学习中心', icon: '🎓', roles: ['staff'] },
   { path: '/question', label: '每次一题', icon: '❓', roles: ['staff'] },
+  { path: '/exam-take', label: '我的考试', icon: '📝', roles: ['staff'] },
   { path: '/profile', label: '个人中心', icon: '👤', roles: ['boss', 'admin', 'staff'] },
   { path: '/review', label: '审核中心', icon: '✅', roles: ['admin'] },
   { path: '/team-dashboard', label: '团队看板', icon: '👥', roles: ['admin', 'boss'] },

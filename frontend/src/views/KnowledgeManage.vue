@@ -17,12 +17,13 @@ interface KnowledgeItem {
 }
 interface Category { id: number; name: string; knowledge_base: string; icon: string | null; knowledge_count?: number; question_count?: number }
 
-const activeTab = ref<'browse' | 'manage'>('browse')
+const activeTab = ref<'browse' | 'manage' | 'category'>('browse')
 
 // 非管理员强制停留在浏览 Tab
-function switchTab(tab: 'browse' | 'manage') {
-  if (tab === 'manage' && !auth.isAdmin) return
+function switchTab(tab: 'browse' | 'manage' | 'category') {
+  if ((tab === 'manage' || tab === 'category') && !auth.isAdmin) return
   activeTab.value = tab
+  if (tab === 'category') fetchCategoryTree()
 }
 
 const items = ref<KnowledgeItem[]>([])
@@ -48,6 +49,87 @@ const draftQuestions = ref<any[]>([])
 const aiQuestionResult = ref('')
 const questionTotal = ref(0)
 const confirmDone = ref(false)  // 入库完成后显示最终结果
+
+// ===== 知识类别 Tab =====
+interface CatTreeNode {
+  id: number; name: string; parent_id: number | null; knowledge_base: string
+  sort_order: number; icon: string | null; description: string | null
+  is_active: boolean; knowledge_count: number; question_count: number
+}
+const categoryTree = ref<CatTreeNode[]>([])
+const selectedCat = ref<CatTreeNode | null>(null)
+const catExpanded = ref<Record<string, boolean>>({ public: true, sales: false, tech: false, service: false })
+const showCatForm = ref(false)
+const catEditing = ref<{ id?: number; name: string; parent_id: number | null; knowledge_base: string; icon: string; sort_order: number }>({ name: '', parent_id: null, knowledge_base: 'public', icon: '', sort_order: 0 })
+const catFormMode = ref<'create' | 'edit'>('create')
+const catSaving = ref(false)
+
+const positionLabel: Record<string, string> = { public: '全部岗位', sales: '销售岗', tech: '技术岗', service: '客服岗' }
+
+const treeRoots = computed(() => {
+  const roots = ['public', 'sales', 'tech', 'service']
+  return roots.map(kb => ({
+    key: kb,
+    label: kbLabel[kb],
+    children: categoryTree.value.filter(c => c.knowledge_base === kb)
+  }))
+})
+
+async function fetchCategoryTree() {
+  try {
+    const { data } = await axios.get('/api/categories/tree')
+    categoryTree.value = data.data.items || []
+  } catch { /* ignore */ }
+}
+
+function selectCat(cat: CatTreeNode) {
+  selectedCat.value = cat
+}
+
+function toggleCatRoot(kb: string) {
+  catExpanded.value[kb] = !catExpanded.value[kb]
+}
+
+function openCatCreate(kb: string, parentId: number | null = null) {
+  catFormMode.value = 'create'
+  catEditing.value = { name: '', parent_id: parentId, knowledge_base: kb, icon: '', sort_order: 0 }
+  showCatForm.value = true
+}
+
+function openCatEdit(cat: CatTreeNode) {
+  catFormMode.value = 'edit'
+  catEditing.value = { id: cat.id, name: cat.name, parent_id: cat.parent_id, knowledge_base: cat.knowledge_base, icon: cat.icon || '', sort_order: cat.sort_order }
+  showCatForm.value = true
+}
+
+async function saveCatForm() {
+  const d = catEditing.value
+  if (!d.name.trim()) return
+  catSaving.value = true
+  try {
+    if (catFormMode.value === 'create') {
+      await axios.post('/api/categories', { name: d.name, parent_id: d.parent_id, knowledge_base: d.knowledge_base, icon: d.icon || null, sort_order: d.sort_order })
+    } else {
+      await axios.put(`/api/categories/${d.id}`, { name: d.name, icon: d.icon || null, sort_order: d.sort_order })
+    }
+    showCatForm.value = false; selectedCat.value = null
+    await fetchCategoryTree(); await fetchCategories()  // 刷新分类缓存
+  } catch (e: any) { alert(e.response?.data?.detail || '保存失败') }
+  finally { catSaving.value = false }
+}
+
+async function deleteCat(cat: CatTreeNode) {
+  const msg = cat.knowledge_count > 0 || cat.question_count > 0
+    ? `该分类下有 ${cat.knowledge_count} 条知识、${cat.question_count} 道试题，将【停用】而非删除，确认？`
+    : `确定删除分类「${cat.name}」？`
+  if (!confirm(msg)) return
+  try {
+    const { data } = await axios.delete(`/api/categories/${cat.id}`)
+    alert(data.msg || (data.data.deleted ? '已删除' : '已停用'))
+    selectedCat.value = null
+    await fetchCategoryTree(); await fetchCategories()
+  } catch (e: any) { alert(e.response?.data?.detail || '操作失败') }
+}
 
 // 视频导入进度（SSE 流式）
 const videoProgressPct = ref(0)
@@ -330,7 +412,8 @@ onMounted(async () => {
     <!-- Tab 切换 -->
     <div class="km-tabs">
       <button :class="{ active: activeTab === 'browse' }" @click="switchTab('browse')">📖 知识浏览</button>
-      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'manage' }" @click="switchTab('manage')">⚙️ 知识管理</button>
+      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'manage' }" @click="switchTab('manage')">⚙️ 知识导入</button>
+      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'category' }" @click="switchTab('category')">📂 知识类别</button>
       <span style="margin-left:auto;font-size:12px;color:var(--text-sub)">知识 {{ total }} 条 · 题库 {{ questionTotal }} 题</span>
       <button v-if="auth.isAdmin" class="btn btn-sm btn-outline" @click="showImport = true" style="margin-left:8px">📥 批量导入</button>
     </div>
@@ -378,6 +461,98 @@ onMounted(async () => {
         </article>
         <div v-if="browseItems.length === 0" class="kb-empty">暂无内容</div>
       </div>
+    </div>
+
+    <!-- ==================== 知识类别 Tab ==================== -->
+    <div v-if="activeTab === 'category'" class="km-category">
+      <div class="km-cat-layout">
+        <!-- 左侧：分类树 -->
+        <div class="km-cat-left">
+          <div class="km-cat-tree">
+            <div v-for="root in treeRoots" :key="root.key" class="tree-root">
+              <div class="tree-root-header" @click="toggleCatRoot(root.key)">
+                <span class="tree-arrow">{{ catExpanded[root.key] ? '▼' : '▶' }}</span>
+                <span class="tree-root-icon">📁</span>
+                <span class="tree-root-label">{{ root.label }}</span>
+                <span class="tree-root-count">{{ root.children.length }} 个分类</span>
+                <button class="btn btn-xs" @click.stop="openCatCreate(root.key)" title="新增分类">+</button>
+              </div>
+              <div v-if="catExpanded[root.key]" class="tree-children">
+                <div v-for="cat in root.children" :key="cat.id"
+                  class="tree-node"
+                  :class="{ active: selectedCat?.id === cat.id, inactive: !cat.is_active }"
+                  @click="selectCat(cat)">
+                  <span class="tree-node-icon">{{ cat.icon || '📄' }}</span>
+                  <span class="tree-node-name">{{ cat.name }}</span>
+                  <span v-if="!cat.is_active" class="tree-disabled-tag">已停用</span>
+                  <span class="tree-node-stats">{{ cat.knowledge_count }}知/{{ cat.question_count }}题</span>
+                  <span class="tree-node-actions">
+                    <button class="btn btn-xs btn-outline" @click.stop="openCatEdit(cat)" title="编辑">✏️</button>
+                    <button class="btn btn-xs btn-outline" @click.stop="deleteCat(cat)" title="删除">🗑</button>
+                  </span>
+                </div>
+                <div v-if="root.children.length === 0" class="tree-empty">暂无分类，点击 + 新建</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：分类详情 -->
+        <div class="km-cat-right">
+          <div class="km-cat-right-inner">
+          <div v-if="selectedCat" class="cat-detail card">
+            <h3 class="cat-detail-name">{{ selectedCat.icon || '📄' }} {{ selectedCat.name }}</h3>
+            <div class="cat-detail-status">
+              <span :class="selectedCat.is_active ? 'badge-active' : 'badge-disabled'">
+                {{ selectedCat.is_active ? '🟢 启用中' : '⛔ 已停用' }}
+              </span>
+            </div>
+            <div class="cat-detail-grid">
+              <div class="cat-detail-item"><label>所属知识库</label><span>{{ kbLabel[selectedCat.knowledge_base] || selectedCat.knowledge_base }}</span></div>
+              <div class="cat-detail-item"><label>对应岗位</label><span>{{ positionLabel[selectedCat.knowledge_base] || '全部' }}</span></div>
+              <div class="cat-detail-item"><label>知识数量</label><span class="cat-stat-num">{{ selectedCat.knowledge_count }} 条</span></div>
+              <div class="cat-detail-item"><label>试题数量</label><span class="cat-stat-num">{{ selectedCat.question_count }} 题</span></div>
+            </div>
+            <div v-if="selectedCat.description" class="cat-detail-desc">
+              <label>描述</label><p>{{ selectedCat.description }}</p>
+            </div>
+            <div class="cat-detail-actions">
+              <button class="btn btn-sm" @click="openCatEdit(selectedCat)">✏️ 编辑</button>
+              <button class="btn btn-sm btn-outline" @click="deleteCat(selectedCat)">🗑 {{ (selectedCat.knowledge_count > 0 || selectedCat.question_count > 0) ? '停用' : '删除' }}</button>
+            </div>
+          </div>
+          <div v-else class="cat-detail-empty">
+            <p>👈 点击左侧分类查看详情</p>
+          </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 新增/编辑分类弹窗 -->
+      <Teleport to="body">
+        <div v-if="showCatForm" class="modal-overlay" @click.self="showCatForm = false">
+          <div class="modal-panel" style="width:480px">
+            <div class="modal-header">
+              <h3>{{ catFormMode === 'create' ? '新增' : '编辑' }}分类</h3>
+              <button @click="showCatForm = false" class="btn btn-sm">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group"><label>分类名称</label><input v-model="catEditing.name" class="form-input" style="width:100%" placeholder="输入分类名称" /></div>
+              <div class="form-group"><label>所属知识库</label>
+                <select v-model="catEditing.knowledge_base" class="form-input" style="width:100%" :disabled="catFormMode === 'edit'">
+                  <option value="public">公共</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option>
+                </select>
+              </div>
+              <div class="form-group"><label>图标</label><input v-model="catEditing.icon" class="form-input" style="width:100%" placeholder="如 🚗" /></div>
+              <div class="form-group"><label>排序</label><input v-model.number="catEditing.sort_order" type="number" class="form-input" style="width:100px" /></div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" @click="showCatForm = false">取消</button>
+              <button class="btn" @click="saveCatForm" :disabled="catSaving">{{ catSaving ? '保存中...' : '保存' }}</button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
     </div>
 
     <!-- ==================== 管理 Tab ==================== -->
@@ -654,6 +829,59 @@ onMounted(async () => {
 .kb-card-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-sub); }
 .kb-card-tags { color: var(--accent); }
 
+/* 知识类别 Tab */
+.km-category { max-width: 100%; }
+.km-cat-layout { display: flex; gap: 20px; align-items: flex-start; }
+.km-cat-left { width: 340px; flex-shrink: 0; }
+.km-cat-right { flex: 1; min-width: 0; }
+.km-cat-right-inner { position: fixed; top: 50%; left: calc(50vw + 180px); transform: translate(-50%, -50%); max-width: 520px; width: 100%; }
+.km-cat-tree { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); overflow: hidden; }
+.tree-root { border-bottom: 1px solid var(--border); }
+.tree-root:last-child { border-bottom: none; }
+.tree-root-header {
+  display: flex; align-items: center; gap: 6px; padding: 10px 12px;
+  cursor: pointer; background: var(--bg-main); font-weight: 600; font-size: 13px;
+  user-select: none; transition: background 0.15s;
+}
+.tree-root-header:hover { background: var(--border); }
+.tree-arrow { font-size: 10px; width: 14px; text-align: center; color: var(--text-sub); }
+.tree-root-icon { font-size: 16px; }
+.tree-root-label { flex: 1; color: var(--text-main); }
+.tree-root-count { font-size: 11px; color: var(--text-sub); }
+.tree-children { padding: 2px 0; }
+.tree-node {
+  display: flex; align-items: center; gap: 6px; padding: 7px 12px 7px 28px;
+  cursor: pointer; font-size: 13px; transition: background 0.12s; border-left: 3px solid transparent;
+}
+.tree-node:hover { background: var(--bg-main); }
+.tree-node.active { background: rgba(var(--primary-rgb, 74, 144, 226), 0.08); border-left-color: var(--primary); }
+.tree-node.inactive { opacity: 0.6; }
+.tree-node-icon { font-size: 14px; flex-shrink: 0; }
+.tree-node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-main); }
+.tree-node-stats { font-size: 11px; color: var(--text-sub); white-space: nowrap; }
+.tree-node-actions { display: none; gap: 2px; }
+.tree-node:hover .tree-node-actions { display: flex; }
+.tree-disabled-tag { font-size: 10px; padding: 1px 5px; border-radius: 6px; background: var(--danger); color: #fff; }
+.tree-empty { padding: 14px; text-align: center; font-size: 12px; color: var(--text-sub); }
+
+.cat-detail { padding: 20px; min-height: 200px; }
+.cat-detail-name { margin: 0 0 12px; font-size: 18px; }
+.cat-detail-status { margin-bottom: 16px; }
+.badge-active { padding: 3px 12px; border-radius: 12px; font-size: 12px; background: rgba(122,166,104,0.1); color: var(--success); border: 1px solid rgba(122,166,104,0.3); }
+.badge-disabled { padding: 3px 12px; border-radius: 12px; font-size: 12px; background: rgba(192,64,59,0.08); color: var(--danger); border: 1px solid rgba(192,64,59,0.3); }
+.cat-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.cat-detail-item label { display: block; font-size: 11px; color: var(--text-sub); margin-bottom: 2px; }
+.cat-detail-item span { font-size: 14px; color: var(--text-main); font-weight: 500; }
+.cat-stat-num { color: var(--primary) !important; font-weight: 700 !important; }
+.cat-detail-desc { margin-bottom: 16px; }
+.cat-detail-desc label { font-size: 11px; color: var(--text-sub); }
+.cat-detail-desc p { margin: 4px 0 0; font-size: 13px; color: var(--text-main); line-height: 1.5; }
+.cat-detail-actions { display: flex; gap: 8px; }
+.cat-detail-empty { display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--text-sub); font-size: 14px; }
+
+.btn-xs { padding: 2px 6px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-card); cursor: pointer; color: var(--text-sub); }
+.btn-xs:hover { background: var(--border); color: var(--text-main); }
+
 @media (max-width: 768px) {
   .km-toolbar { flex-direction: column; }
   .km-search { width: 100%; }
@@ -662,5 +890,9 @@ onMounted(async () => {
   .form-row { flex-direction: column; }
   .review-grid { grid-template-columns: 1fr; }
   .modal-panel-big { width: 100vw; max-width: 100vw; }
+  .km-cat-layout { flex-direction: column; }
+  .km-cat-left { width: 100%; }
+  .km-cat-right { width: 100%; }
+  .km-cat-right-inner { position: static; transform: none; max-width: 100%; }
 }
 </style>

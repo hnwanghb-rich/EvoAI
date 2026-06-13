@@ -101,6 +101,22 @@ class CategoryOut(BaseModel):
         from_attributes = True
 
 
+class CategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    parent_id: Optional[int] = None
+    knowledge_base: str = "public"
+    icon: Optional[str] = None
+    sort_order: int = 0
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=50)
+    parent_id: Optional[int] = None
+    knowledge_base: Optional[str] = None
+    icon: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
 # ============================================================
 # 知识条目
 # ============================================================
@@ -192,6 +208,46 @@ class LLMProviderCreate(BaseModel):
 class SettingUpdate(BaseModel):
     config_key: str
     config_value: str
+
+
+# ============================================================
+# 试卷 / 组卷
+# ============================================================
+
+class ExamPaperAutoGenerate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    target_type: str = "all"            # all / dept / position
+    target_value: str = ""              # dept_id or position name
+    category_ids: list[int] = []        # 知识类别筛选
+    question_count: int = Field(20, ge=1, le=100)
+    time_mode: str = "anytime"          # anytime / scheduled
+    start_time: Optional[str] = None    # ISO datetime
+    end_time: Optional[str] = None
+    duration_minutes: int = 60
+
+
+class ExamPaperManualCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    target_type: str = "all"
+    target_value: str = ""
+    question_ids: list[int] = []
+    time_mode: str = "anytime"
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration_minutes: int = 60
+
+
+class ExamPaperUpdate(BaseModel):
+    title: Optional[str] = None
+    time_mode: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    status: Optional[str] = None
+
+
+class ExamSubmit(BaseModel):
+    answers: dict = {}  # {question_id(int): user_answer(str), ...}
 
 
 class BatchAIQuestionRequest(BaseModel):
