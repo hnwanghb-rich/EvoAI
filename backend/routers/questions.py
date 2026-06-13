@@ -217,6 +217,7 @@ async def list_questions(
     difficulty: int = Query(0),
     question_type: str = Query("", max_length=20),
     keyword: str = Query("", max_length=200),
+    category_id: int = Query(0),
     _admin: User = Depends(require_admin),
 ):
     """题库管理列表"""
@@ -233,6 +234,9 @@ async def list_questions(
         if question_type:
             q = q.where(DailyQuestion.question_type == question_type)
             cq = cq.where(DailyQuestion.question_type == question_type)
+        if category_id > 0:
+            q = q.where(DailyQuestion.category_id == category_id)
+            cq = cq.where(DailyQuestion.category_id == category_id)
         if keyword:
             like = f"%{keyword}%"
             q = q.where(DailyQuestion.question_content.ilike(like))

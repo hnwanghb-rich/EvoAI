@@ -25,7 +25,6 @@ const loading = ref(false)
 const items = ref<QItem[]>([])
 const total = ref(0)
 const page = ref(1)
-const posFilter = ref('')
 const diffFilter = ref(0)
 const typeFilter = ref('')
 const keyword = ref('')
@@ -54,6 +53,15 @@ const selectedQids = ref<Set<number>>(new Set())
 const manualForm = ref({ title: '', target_type: 'all', target_value: '', time_mode: 'anytime', start_date: '', start_time: '', end_date: '', end_time: '', duration_minutes: 60 })
 const manualLoading = ref(false)
 
+const kbLabel: Record<string, string> = { public: '公共', sales: '销售', tech: '技术', service: '客服' }
+const catFilter = ref(0)
+const catExpanded = ref<Record<string, boolean>>({ public: false, sales: false, tech: false, service: false })
+const catDropdown = ref(false)
+const catSelectedLabel = computed(() => {
+  if (catFilter.value === 0) return '全部分类'
+  const found = allCategories.value.find(c => c.id === catFilter.value)
+  return found ? `${found.icon || ''} ${found.name}` : '全部分类'
+})
 const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服', clerk: '文员', public: '公共' }
 const targetLabel: Record<string, string> = { all: '全员', dept: '部门', position: '岗位' }
 const timeLabel: Record<string, string> = { anytime: '随时可考', scheduled: '定时考试' }
@@ -101,9 +109,9 @@ async function fetchList() {
   loading.value = true
   try {
     const params: any = { page: page.value, page_size: 20 }
-    if (posFilter.value) params.position = posFilter.value
     if (diffFilter.value) params.difficulty = diffFilter.value
     if (typeFilter.value) params.question_type = typeFilter.value
+    if (catFilter.value) params.category_id = catFilter.value
     if (keyword.value) params.keyword = keyword.value
     const { data } = await axios.get('/api/questions/list', { params })
     items.value = data.data.items; total.value = data.data.total
@@ -307,7 +315,7 @@ function switchTab(tab: 'papers' | 'exams' | 'mine') {
   activeTab.value = tab
   if (tab === 'exams') { fetchPublicPapers(); startCountdown() }
   if (tab === 'mine') { fetchMyExams(); stopCountdown() }
-  if (tab === 'papers') { stopCountdown() }
+  if (tab === 'papers') { stopCountdown(); fetchPapers(); fetchCategories(); if (items.value.length === 0) { fetchList(); fetchStats() } }
 }
 
 function startCountdown() {
@@ -343,24 +351,6 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
         </div>
       </div>
 
-      <!-- 试卷列表 -->
-      <div class="em-section" v-if="papers.length">
-        <h3 class="em-section-title">已有试卷（{{ papers.length }} 份）</h3>
-        <div class="paper-list">
-          <div v-for="p in papers" :key="p.id" class="paper-card card" @click="viewPaper(p.id)">
-            <div class="paper-card-top"><h4>{{ p.title }}</h4><span :class="p.status === 'archived' ? 'paper-archived' : 'paper-active'">{{ p.status === 'archived' ? '已归档' : '启用' }}</span></div>
-            <div class="paper-card-meta">
-              <span>🎯 {{ targetLabel[p.target_type] || '全员' }}{{ p.target_value ? ' · ' + p.target_value : '' }}</span>
-              <span>📝 {{ p.total_questions }} 题</span><span>⏱ {{ p.duration_minutes }} 分钟</span><span>{{ timeLabel[p.time_mode] || p.time_mode }}</span>
-            </div>
-            <div class="paper-card-actions" @click.stop>
-              <button v-if="p.status === 'active'" class="btn btn-sm btn-outline" @click="archivePaper(p.id)">归档</button>
-              <button class="btn btn-sm btn-outline" @click="deletePaper(p.id)" style="color:var(--danger)">删除</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- 题库统计 -->
       <div class="em-stats" v-if="stats.total">
         <div class="em-stat"><span class="ems-num">{{ stats.total }}</span><span class="ems-label">题目总数</span></div>
@@ -372,9 +362,27 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
       <!-- 题库筛选+列表 -->
       <div class="em-tools">
         <input v-model="keyword" placeholder="搜索题目..." class="form-input" style="width:200px" @keydown.enter="search" />
-        <select v-model="posFilter" @change="search" class="form-input" style="width:auto"><option value="">全部岗位</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option><option value="clerk">文员</option></select>
         <select v-model="diffFilter" @change="search" class="form-input" style="width:auto"><option value="0">全部难度</option><option v-for="n in 5" :key="n" :value="n">{{ '★'.repeat(n) }}</option></select>
         <select v-model="typeFilter" @change="search" class="form-input" style="width:auto"><option value="">全部题型</option><option value="single_choice">单选</option><option value="multi_choice">多选</option><option value="true_false">判断</option><option value="fill_blank">填空</option></select>
+        <div class="cat-dropdown">
+          <button class="cat-dropdown-btn" @click="catDropdown = !catDropdown">
+            📂 {{ catSelectedLabel }} ▾
+          </button>
+          <div v-if="catDropdown" class="cat-dropdown-backdrop" @click="catDropdown = false"></div>
+          <div v-if="catDropdown" class="cat-dropdown-panel">
+            <span :class="{ active: catFilter === 0 }" @click="catFilter = 0; catDropdown = false; search()">全部类型</span>
+            <div v-for="kb in ['public','sales','tech','service']" :key="kb" class="cat-dd-group">
+              <span class="cat-dd-root" @click.stop="catExpanded[kb] = !catExpanded[kb]">
+                {{ catExpanded[kb] ? '▼' : '▶' }} {{ kbLabel[kb] }}
+              </span>
+              <div v-if="catExpanded[kb]" class="cat-dd-subs">
+                <span v-for="c in allCategories.filter(x => x.knowledge_base === kb)" :key="c.id"
+                  :class="{ active: catFilter === c.id }"
+                  @click="catFilter = c.id; catDropdown = false; search()">{{ c.icon || '' }} {{ c.name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
         <button class="btn btn-sm" @click="search">搜索</button>
       </div>
       <div class="table-responsive" v-if="!loading">
@@ -678,7 +686,23 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
 .ems-label { font-size: 11px; color: var(--text-sub); }
 
 /* 题库筛选/列表 */
-.em-tools { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+.em-tools { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+/* 知识类别下拉树 */
+.cat-dropdown { position: relative; display: inline-block; }
+.cat-dropdown-btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--bg-card); color: var(--text-main); cursor: pointer; white-space: nowrap; }
+.cat-dropdown-btn:hover { border-color: var(--primary); }
+.cat-dropdown-backdrop { position: fixed; inset: 0; z-index: 10; }
+.cat-dropdown-panel { position: absolute; top: 100%; left: 0; z-index: 100; margin-top: 4px; width: 280px; max-height: 420px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 24px var(--shadow); padding: 8px; }
+.cat-dropdown-panel > span { display: block; padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--text-sub); }
+.cat-dropdown-panel > span:hover { background: var(--bg-main); }
+.cat-dropdown-panel > span.active { background: var(--primary); color: #fff; }
+.cat-dd-group { margin-top: 4px; }
+.cat-dd-root { display: block; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text-main); border-radius: 6px; user-select: none; }
+.cat-dd-root:hover { background: var(--bg-main); }
+.cat-dd-subs { padding: 2px 0 4px 16px; display: flex; flex-wrap: wrap; gap: 2px; }
+.cat-dd-subs span { padding: 3px 10px; border-radius: 8px; font-size: 11px; cursor: pointer; border: 1px solid transparent; color: var(--text-sub); white-space: nowrap; }
+.cat-dd-subs span:hover { border-color: var(--primary); color: var(--primary); }
+.cat-dd-subs span.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 .em-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--bg-card); border-radius: 8px; overflow: hidden; }
 .em-table th, .em-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 .em-table th { background: var(--bg-main); font-size: 12px; color: var(--text-sub); }
