@@ -14,6 +14,9 @@ const monthNewLearned = ref(0)
 const allRadarData = ref<RadarItem[]>([])
 const weakAreas = ref<{ category_name: string; mastery: number }[]>([])
 const memberRank = ref<MemberRank[]>([])
+const teamPosition = ref('')
+
+const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服', clerk: '文员' }
 
 // 维度选择
 const selectedCats = ref<Set<number>>(new Set())
@@ -35,7 +38,9 @@ const radarData = computed(() =>
 )
 
 async function fetchData() {
-  const { data } = await axios.get('/api/dashboard/team')
+  const params: any = {}
+  if (teamPosition.value) params.position = teamPosition.value
+  const { data } = await axios.get('/api/dashboard/team', { params })
   const d = data.data
   deptName.value = d.dept_name
   memberCount.value = d.member_count
@@ -74,7 +79,16 @@ onMounted(fetchData)
 
 <template>
   <div class="td-page">
-    <h2 class="page-title">团队看板 · {{ deptName }}</h2>
+    <div class="td-top-bar">
+      <h2 class="page-title">团队看板 · {{ deptName }}</h2>
+      <div class="td-pos-filter">
+        <button :class="{ active: teamPosition === '' }" @click="teamPosition = ''; fetchData()">全部</button>
+        <button :class="{ active: teamPosition === 'sales' }" @click="teamPosition = 'sales'; fetchData()">💼 销售</button>
+        <button :class="{ active: teamPosition === 'tech' }" @click="teamPosition = 'tech'; fetchData()">🔧 技术</button>
+        <button :class="{ active: teamPosition === 'service' }" @click="teamPosition = 'service'; fetchData()">📞 客服</button>
+        <button :class="{ active: teamPosition === 'clerk' }" @click="teamPosition = 'clerk'; fetchData()">📋 文员</button>
+      </div>
+    </div>
 
     <div v-if="loading" class="td-loading">加载中...</div>
 
@@ -167,8 +181,13 @@ onMounted(fetchData)
 
 <style scoped>
 .td-page { max-width: 1300px; margin: 0 auto; }
-.page-title { font-size: 20px; margin-bottom: 16px; color: var(--text-main); }
+.td-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+.page-title { font-size: 20px; margin: 0; color: var(--text-main); }
 .td-loading { text-align: center; padding: 60px; color: var(--text-sub); }
+.td-pos-filter { display: flex; gap: 4px; }
+.td-pos-filter button { padding: 5px 14px; border: 1px solid var(--border); border-radius: 14px; font-size: 12px; background: none; color: var(--text-sub); cursor: pointer; transition: all 0.15s; }
+.td-pos-filter button:hover { border-color: var(--primary); color: var(--primary); }
+.td-pos-filter button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
 .td-cards { display: flex; gap: 10px; margin-bottom: 16px; }
 .td-card { text-align: center; padding: 14px 10px; flex: 1; }

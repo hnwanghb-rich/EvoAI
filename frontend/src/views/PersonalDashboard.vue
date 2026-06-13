@@ -59,14 +59,13 @@ async function fetchDashboard() {
     weakAreas.value = d.weak_areas
     recentRecords.value = d.recent_records
 
-    // 恢复上次维度选择，否则默认选薄弱前5个
+    // 恢复上次维度选择，否则默认全选（显示岗位对应所有分类）
     const saved = loadSavedDims()
     if (saved && saved.size > 0 && allRadarData.value.some(d => saved.has(d.category_id))) {
       selectedCats.value = saved
     } else {
-      // 默认：掌握度最低的5个
-      const sorted = [...allRadarData.value].sort((a, b) => a.mastery - b.mastery)
-      selectedCats.value = new Set(sorted.slice(0, 5).map(d => d.category_id))
+      // 默认：全选该岗位所有分类
+      selectedCats.value = new Set(allRadarData.value.map(d => d.category_id))
     }
   } finally {
     loading.value = false
@@ -172,9 +171,7 @@ onMounted(fetchDashboard)
               <input type="checkbox" :checked="selectedCats.has(d.category_id)" @change="toggleCategory(d.category_id)" />
               <span class="dim-icon">{{ d.icon || '📄' }}</span>
               <span class="dim-name">{{ d.category_name }}</span>
-              <span class="dim-bar-bg">
-                <span class="dim-bar" :style="{ width: d.mastery + '%', background: d.mastery < 40 ? 'var(--danger)' : d.mastery < 70 ? 'var(--accent)' : 'var(--success)' }"></span>
-              </span>
+              <span class="dim-score">{{ d.learned }}/{{ d.total }}</span>
               <span class="dim-pct">{{ d.mastery }}%</span>
             </label>
           </div>
@@ -249,9 +246,8 @@ onMounted(fetchDashboard)
 .dim-item input { accent-color: var(--primary); width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
 .dim-icon { font-size: 13px; flex-shrink: 0; }
 .dim-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dim-bar-bg { width: 50px; height: 6px; background: var(--bg-main); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
-.dim-bar { height: 100%; border-radius: 3px; }
-.dim-pct { width: 32px; text-align: right; font-weight: 600; font-size: 11px; color: var(--text-sub); flex-shrink: 0; }
+.dim-score { font-size: 11px; color: var(--success); font-weight: 600; flex-shrink: 0; min-width: 40px; text-align: center; }
+.dim-pct { width: 36px; text-align: right; font-weight: 600; font-size: 12px; color: var(--primary); flex-shrink: 0; }
 
 /* 底部 */
 .pd-bottom { display: flex; gap: 14px; }

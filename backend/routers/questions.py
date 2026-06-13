@@ -5,12 +5,12 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 
 from database import async_session
 from models import (
     DailyQuestion, LearningRecord, ExperiencePoint, KnowledgeEntry,
-    LLMProvider, PointActionEnum,
+    LLMProvider, PointActionEnum, PositionCapability, KnowledgeCategory,
 )
 from schemas import ApiResponse, BatchAIQuestionRequest, BatchQuestionImport
 from auth import get_current_user, require_admin
@@ -29,61 +29,94 @@ POSITION_ORDER = {None: 0, "sales": 1, "tech": 2, "service": 3}
 @router.get("/questions/today", response_model=ApiResponse)
 async def get_today_question(user: User = Depends(get_current_user)):
     """
-    每次进入页面自动分配一题（按岗位推送，排除已答过的，难度递增轮转）
+    每日一题：从用户岗位对应的知识分类试题中选出，排除最近轮过的题目
     """
     pos = user.position.value if user.position else None
 
     async with async_session() as db:
-        # 1. 找出用户已答过的所有题目ID
-        answered_subq = select(LearningRecord.knowledge_id).where(
-            LearningRecord.user_id == user.id,
-            LearningRecord.learn_type == "test",
-        )
-        # 找出对应的 daily_questions 记录：通过 related_knowledge_id 无法直接映射
-        # 改用另一种方式：记录所有答对/答错过的 daily_questions.id
-        # 因为 learning_records 存的是 knowledge_id 不是 question_id，所以改用日期排除
+        # 1. 从 position_capabilities 获取该岗位对应的知识分类
+        pos_cat_ids = []
+        pos_kb = set()
+        if pos:
+            pc_r = await db.execute(
+                select(PositionCapability.category_id).where(
+                    PositionCapability.position == pos,
+                )
+            )
+            pos_cat_ids = [r[0] for r in pc_r.all()]
 
-        # 2. 按岗位筛选，排除14天内已通过 push_date 标记的题目
+            # 获取这些分类所属的知识库（用于 target_position 匹配）
+            if pos_cat_ids:
+                kb_r = await db.execute(
+                    select(func.distinct(KnowledgeCategory.knowledge_base)).where(
+                        KnowledgeCategory.id.in_(pos_cat_ids),
+                    )
+                )
+                for r in kb_r:
+                    pos_kb.add(r[0])
+
+        # 2. 查找已答过的题目和14天内已推送的题目
+        answered_ids = set()
+        answered_r = await db.execute(
+            select(LearningRecord.knowledge_id).where(
+                LearningRecord.user_id == user.id,
+                LearningRecord.learn_type == "test",
+            )
+        )
+        # 通过 related_knowledge_id 反向找已答的 daily_question
+        for row in answered_r:
+            dq_r = await db.execute(
+                select(DailyQuestion.id).where(
+                    DailyQuestion.related_knowledge_id == row[0]
+                )
+            )
+            for dq in dq_r:
+                answered_ids.add(dq[0])
+
         cutoff = date.today() - timedelta(days=14)
         used_ids_r = await db.execute(
             select(DailyQuestion.id).where(
                 DailyQuestion.push_date >= cutoff,
             )
         )
-        used_ids = set(r[0] for r in used_ids_r.all())
+        used_ids = answered_ids | set(r[0] for r in used_ids_r.all())
 
-        # 3. 按岗位+难度递增选一题（排除14天内已推过的）
+        # 3. 按岗位知识分类筛选（category_id 优先，target_position 作为兼容）
+        def where_clause(q):
+            conditions = []
+            if pos_cat_ids:
+                # 优选：category_id 在岗位配置分类中
+                conditions.append(DailyQuestion.category_id.in_(pos_cat_ids))
+            if pos_kb:
+                # 兼容：target_position 匹配岗位知识库
+                kb_values = [kb for kb in pos_kb if kb in ("public", "sales", "tech", "service")]
+                if kb_values:
+                    conditions.append(DailyQuestion.target_position.in_(kb_values))
+                if "public" in pos_kb:
+                    conditions.append(DailyQuestion.target_position.is_(None))
+            if conditions:
+                q = q.where(or_(*conditions))
+            return q
+
+        base_q = select(DailyQuestion)
+        if used_ids:
+            base_q = where_clause(base_q).where(~DailyQuestion.id.in_(used_ids))
+        else:
+            base_q = where_clause(base_q)
+
         q = (await db.execute(
-            select(DailyQuestion)
-            .where(
-                ((DailyQuestion.target_position == pos) | (DailyQuestion.target_position.is_(None))),
-                ~DailyQuestion.id.in_(used_ids) if used_ids else True,
-            )
-            .order_by(DailyQuestion.difficulty_level)
-            .limit(1)
+            base_q.order_by(DailyQuestion.difficulty_level).limit(1)
         )).scalar_one_or_none()
 
-        # 4. 如果岗位题已轮完 → 取任意未推送的
-        if not q:
+        # 4. 岗位题已轮完 → 重置，重新取第一道
+        if not q and pos_cat_ids:
             q = (await db.execute(
-                select(DailyQuestion)
-                .where(~DailyQuestion.id.in_(used_ids) if used_ids else True)
+                where_clause(select(DailyQuestion))
                 .order_by(DailyQuestion.difficulty_level)
                 .limit(1)
             )).scalar_one_or_none()
 
-        # 5. 所有题都轮完了 → 重置周期，从第一道开始
-        if not q:
-            q = (await db.execute(
-                select(DailyQuestion)
-                .where(
-                    (DailyQuestion.target_position == pos) | (DailyQuestion.target_position.is_(None))
-                )
-                .order_by(DailyQuestion.difficulty_level)
-                .limit(1)
-            )).scalar_one_or_none()
-
-        # 兜底：取题库第一题
+        # 5. 兜底：取题库任意一题
         if not q:
             q = (await db.execute(
                 select(DailyQuestion).order_by(DailyQuestion.difficulty_level).limit(1)
@@ -95,7 +128,6 @@ async def get_today_question(user: User = Depends(get_current_user)):
             await db.refresh(q)
 
         if not q:
-            return ApiResponse(data=None, msg="暂无题目")
             return ApiResponse(data=None, msg="暂无题目")
 
         data = {

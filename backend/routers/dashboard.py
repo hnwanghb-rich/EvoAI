@@ -1,7 +1,9 @@
 """
 数据看板路由 —— 个人掌握度 / 首页仪表盘 / 团队 / 全局 / 飞轮
 """
+import logging
 from datetime import datetime, timedelta, date
+from typing import Dict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, text, and_
 
@@ -9,6 +11,8 @@ from database import async_session
 from models import (
     KnowledgeEntry, KnowledgeCategory, LearningRecord,
     ExperiencePoint, User, Department, ChatLog,
+    DailyQuestion, ExamAttempt, ExamPaperQuestion,
+    PositionCapability,
 )
 from schemas import ApiResponse
 from auth import get_current_user, require_admin, require_boss
@@ -16,12 +20,137 @@ from recommendation import personalized_recommend
 from cache import cache_get, cache_set
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 POSITION_KB_MAP = {
     "sales": ["public", "sales"],
     "tech": ["public", "tech"],
     "service": ["public", "service"],
 }
+
+POSITIONS = ["sales", "tech", "service", "clerk"]
+
+
+async def _calc_mastery_by_category(db, user_id: int, cat_ids: list[int]) -> Dict[int, dict]:
+    """
+    按知识分类计算用户掌握度（数据来源：每日一题答题 + 考试结果）
+    返回 {category_id: {correct: int, total: int, mastery: float}}
+    """
+    result: Dict[int, dict] = {cid: {"correct": 0, "total": 0, "mastery": 0} for cid in cat_ids}
+
+    # ---- 数据源1：每日一题答题结果 (learning_records with learn_type='test') ----
+    if cat_ids:
+        # 总答题数
+        lr_total = await db.execute(
+            select(
+                KnowledgeEntry.category_id,
+                func.count(LearningRecord.id),
+            )
+            .join(KnowledgeEntry, KnowledgeEntry.id == LearningRecord.knowledge_id)
+            .where(
+                LearningRecord.user_id == user_id,
+                LearningRecord.learn_type == "test",
+                KnowledgeEntry.category_id.in_(cat_ids),
+            )
+            .group_by(KnowledgeEntry.category_id)
+        )
+        for row in lr_total:
+            cid, total = row[0], row[1] or 0
+            result[cid]["total"] += total
+
+        # 正确答题数（score >= 100 即为正确）
+        lr_correct = await db.execute(
+            select(
+                KnowledgeEntry.category_id,
+                func.count(LearningRecord.id),
+            )
+            .join(KnowledgeEntry, KnowledgeEntry.id == LearningRecord.knowledge_id)
+            .where(
+                LearningRecord.user_id == user_id,
+                LearningRecord.learn_type == "test",
+                LearningRecord.score >= 100,
+                KnowledgeEntry.category_id.in_(cat_ids),
+            )
+            .group_by(KnowledgeEntry.category_id)
+        )
+        for row in lr_correct:
+            cid, correct = row[0], row[1] or 0
+            result[cid]["correct"] += correct
+
+    # ---- 数据源2：考试答卷结果 (exam_attempts) ----
+    # 获取用户所有已提交的答卷
+    attempts = await db.execute(
+        select(ExamAttempt).where(
+            ExamAttempt.user_id == user_id,
+            ExamAttempt.status == "submitted",
+        )
+    )
+    attempts = attempts.scalars().all()
+
+    if attempts:
+        paper_ids = [a.paper_id for a in attempts]
+        # 获取试卷题目 + 正确答案 + 分类（三级 fallback: category_id → related_knowledge_id → target_position）
+        pq_rows = await db.execute(
+            select(
+                ExamPaperQuestion.paper_id,
+                DailyQuestion.id,
+                DailyQuestion.answer,
+                DailyQuestion.category_id,
+                KnowledgeEntry.category_id,
+                DailyQuestion.target_position,
+            )
+            .join(DailyQuestion, DailyQuestion.id == ExamPaperQuestion.question_id)
+            .outerjoin(KnowledgeEntry, KnowledgeEntry.id == DailyQuestion.related_knowledge_id)
+            .where(ExamPaperQuestion.paper_id.in_(paper_ids))
+        )
+
+        # 预加载 target_position → knowledge_base → 第一个 category_id 的映射（fallback 用）
+        kb_cat_map: Dict[str, int] = {}
+        if cat_ids:
+            kb_cats = await db.execute(
+                select(
+                    KnowledgeCategory.knowledge_base,
+                    func.min(KnowledgeCategory.id),
+                )
+                .where(KnowledgeCategory.id.in_(cat_ids))
+                .group_by(KnowledgeCategory.knowledge_base)
+            )
+            kb_cat_map = {r[0]: r[1] for r in kb_cats.all() if r[0] and r[1]}
+
+        # paper_id → [(qid, correct_answer, category_id), ...]
+        paper_questions: Dict[int, list] = {}
+        for row in pq_rows:
+            pid, qid, ans, dq_cid, ke_cid, target_pos = row[0], row[1], row[2], row[3], row[4], row[5]
+            # 三级 fallback
+            cid = dq_cid  # 优先 question 自身的 category_id
+            if cid is None:
+                cid = ke_cid  # 其次 related_knowledge → category_id
+            if cid is None and target_pos:
+                # 最终 fallback：target_position → knowledge_base → 分类
+                cid = kb_cat_map.get(target_pos)
+            if cid is None:
+                continue
+            paper_questions.setdefault(pid, []).append((qid, ans.strip().lower(), cid))
+
+        # 逐份答卷判分
+        for attempt in attempts:
+            if attempt.paper_id not in paper_questions:
+                continue
+            user_answers = attempt.answers if isinstance(attempt.answers, dict) else {}
+            for qid, correct_ans, cid in paper_questions[attempt.paper_id]:
+                if cid not in result:
+                    continue  # 不在该岗位的分类维度中，跳过
+                user_ans = str(user_answers.get(str(qid), "")).strip().lower()
+                is_correct = user_ans == correct_ans
+                result[cid]["total"] += 1
+                if is_correct:
+                    result[cid]["correct"] += 1
+
+    # 计算掌握度百分比
+    for cid, v in result.items():
+        v["mastery"] = round(v["correct"] / v["total"] * 100, 1) if v["total"] > 0 else 0
+
+    return result
 
 
 @router.get("/dashboard/home", response_model=ApiResponse)
@@ -266,80 +395,96 @@ async def home_dashboard(user: User = Depends(get_current_user)):
 
 @router.get("/dashboard/personal", response_model=ApiResponse)
 async def personal_dashboard(user: User = Depends(get_current_user)):
-    """个人知识掌握度看板"""
+    """个人知识掌握度看板 —— 数据源：考试结果 + 每日一题答题"""
     pos = user.position.value if user.position else "sales"
     allowed_kb = POSITION_KB_MAP.get(pos, ["public"])
     if user.role.value in ("admin", "boss"):
         allowed_kb = ["public", "sales", "tech", "service"]
 
     async with async_session() as db:
-        # 1. 各分类知识总数（approved）—— LEFT JOIN 确保无条目的分类也显示
-        cat_r = await db.execute(
+        # 1. 从 position_capabilities 获取该岗位应掌握的分类
+        pos_cat_ids = []
+        if user.position:
+            pc_r = await db.execute(
+                select(PositionCapability.category_id).where(
+                    PositionCapability.position == user.position.value,
+                )
+            )
+            pos_cat_ids = [r[0] for r in pc_r.all()]
+
+        # 如果岗位能力未配置，回退到 knowledge_base 方式
+        if not pos_cat_ids:
+            pos = user.position.value if user.position else "sales"
+            allowed_kb = POSITION_KB_MAP.get(pos, ["public"])
+            if user.role.value in ("admin", "boss"):
+                allowed_kb = ["public", "sales", "tech", "service"]
+            kb_cat_r = await db.execute(
+                select(KnowledgeCategory.id).where(
+                    KnowledgeCategory.knowledge_base.in_(allowed_kb),
+                )
+            )
+            pos_cat_ids = [r[0] for r in kb_cat_r.all()]
+
+        # 2. 获取这些分类的详情（含无知识条目的）
+        cat_rows = await db.execute(
             select(
                 KnowledgeCategory.id,
                 KnowledgeCategory.name,
                 KnowledgeCategory.icon,
                 KnowledgeCategory.description,
-                func.count(KnowledgeEntry.id).label("total"),
+                KnowledgeCategory.knowledge_base,
+                func.coalesce(func.count(KnowledgeEntry.id), 0).label("total"),
             )
             .outerjoin(KnowledgeEntry, and_(
                 KnowledgeEntry.category_id == KnowledgeCategory.id,
                 KnowledgeEntry.status == "approved",
             ))
-            .where(KnowledgeCategory.knowledge_base.in_(allowed_kb))
-            .group_by(KnowledgeCategory.id, KnowledgeCategory.name, KnowledgeCategory.icon, KnowledgeCategory.description)
+            .where(KnowledgeCategory.id.in_(pos_cat_ids) if pos_cat_ids else True)
+            .group_by(KnowledgeCategory.id, KnowledgeCategory.name, KnowledgeCategory.icon, KnowledgeCategory.description, KnowledgeCategory.knowledge_base)
             .order_by(KnowledgeCategory.sort_order)
         )
-        cat_totals = {r[0]: {"name": r[1], "icon": r[2], "description": r[3], "total": r[4]} for r in cat_r.all()}
+        cat_info = {}
+        all_cat_ids = []
+        for r in cat_rows.all():
+            cid, name, icon, desc, kb, total = r[0], r[1], r[2], r[3], r[4], r[5]
+            # 所有岗位配置的分类都显示，不因 total=0 过滤
+            cat_info[cid] = {"name": name, "icon": icon, "description": desc, "total": total}
+            all_cat_ids.append(cid)
 
-        # 2. 用户已学各分类条目数
-        learned_r = await db.execute(
-            select(
-                KnowledgeEntry.category_id,
-                func.count(func.distinct(LearningRecord.knowledge_id)),
-            )
-            .join(KnowledgeEntry, KnowledgeEntry.id == LearningRecord.knowledge_id)
-            .where(
-                LearningRecord.user_id == user.id,
-                KnowledgeEntry.knowledge_base.in_(allowed_kb),
-            )
-            .group_by(KnowledgeEntry.category_id)
-        )
-        learned_counts = {r[0]: r[1] for r in learned_r.all()}
+        # 2. 计算每分类掌握度（考试 + 每日一题）
+        mastery_map = await _calc_mastery_by_category(db, user.id, all_cat_ids)
 
         # 3. 雷达图数据
         radar_data = []
-        for cat_id, info in cat_totals.items():
-            learned = learned_counts.get(cat_id, 0)
-            mastery = round(learned / info["total"] * 100, 1) if info["total"] > 0 else 0
+        for cid, info in cat_info.items():
+            m = mastery_map.get(cid, {"correct": 0, "total": 0, "mastery": 0})
             radar_data.append({
-                "category_id": cat_id,
+                "category_id": cid,
                 "category_name": info["name"],
                 "icon": info["icon"],
                 "description": info.get("description") or "",
-                "mastery": min(mastery, 100),
-                "learned": learned,
-                "total": info["total"],
+                "mastery": m["mastery"],
+                "learned": m["correct"],          # 已做对题目数
+                "total": m["total"],              # 应完成题目数（总答题数）
                 "expected": 80,
             })
         radar_data.sort(key=lambda x: x["mastery"])
-        # 过滤掉无知识条目的维度（total=0 掌握度永远是 0，无意义）
-        radar_data = [d for d in radar_data if d["total"] > 0]
-        weak_areas = radar_data[:3]
+        weak_areas = [d for d in radar_data if d["total"] > 0][:3]  # 薄弱的 = 有数据但掌握度低的
+        if not weak_areas:
+            weak_areas = radar_data[:3]
 
-        total_learned = sum(d["learned"] for d in radar_data)
-        total_all = sum(d["total"] for d in radar_data)
-        overall_mastery = round(total_learned / total_all * 100, 1) if total_all > 0 else 0
+        # 总掌握度 = 各分类掌握度加权平均
+        total_correct = sum(mastery_map.get(cid, {}).get("correct", 0) for cid in all_cat_ids)
+        total_answered = sum(mastery_map.get(cid, {}).get("total", 0) for cid in all_cat_ids)
+        overall_mastery = round(total_correct / total_answered * 100, 1) if total_answered > 0 else 0
 
-        # 4. 积分 + 排名（简化：用原生SQL一次查排名）
-        my_points = 0
+        # 4. 积分 + 排名
         points_r = await db.execute(
             select(func.coalesce(func.sum(ExperiencePoint.points), 0))
             .where(ExperiencePoint.user_id == user.id)
         )
         my_points = points_r.scalar() or 0
 
-        # 全公司排名：比「我」积分高的人数 + 1
         rank_sql = text("""
             SELECT COUNT(*) + 1 FROM (
                 SELECT user_id, SUM(points) AS sp
@@ -351,7 +496,6 @@ async def personal_dashboard(user: User = Depends(get_current_user)):
         rank_r = await db.execute(rank_sql, {"my": my_points})
         company_rank = rank_r.scalar() or 1
 
-        # 本部门排名
         dept_rank = company_rank
         if user.dept_id:
             dept_sql = text("""
@@ -382,7 +526,7 @@ async def personal_dashboard(user: User = Depends(get_current_user)):
         row = week_r.one()
         week_learned, week_duration = row[0] or 0, row[1] or 0
 
-        # 6. 最近10条
+        # 6. 最近学习/考试记录
         recent_r = await db.execute(
             select(
                 LearningRecord.id, LearningRecord.knowledge_id,
@@ -423,33 +567,35 @@ async def personal_dashboard(user: User = Depends(get_current_user)):
 @router.get("/dashboard/team", response_model=ApiResponse)
 async def team_dashboard(
     dept_id: int = Query(0),
+    position: str = Query(""),
     user: User = Depends(require_admin),
 ):
-    """部门掌握度 + 成员排行 + 团队雷达"""
+    """团队看板 —— 按岗位聚合 + 考试/每日一题数据源，position=空则全公司"""
     async with async_session() as db:
-        # 默认当前用户部门
-        did = dept_id if dept_id > 0 else user.dept_id
-        if not did:
-            # 拿第一个部门
-            dr = await db.execute(select(Department.id).limit(1))
-            did = dr.scalar_one_or_none() or 1
+        # 按岗位筛选员工
+        if position and position in POSITIONS:
+            users_q = select(User).where(
+                User.status == 1,
+                User.position == position,
+            )
+        else:
+            users_q = select(User).where(User.status == 1)
+        all_users_r = await db.execute(users_q)
+        all_users = all_users_r.scalars().all()
+        all_mids = [u.id for u in all_users]
+        member_count = len(all_users)
 
-        # 部门信息
-        dept_r = await db.execute(select(Department.name).where(Department.id == did))
-        dept_name = dept_r.scalar_one_or_none() or "未知"
+        # 员工ID → 岗位名
+        user_pos: Dict[int, str] = {u.id: u.position.value if u.position else "" for u in all_users}
 
-        # 部门成员数（status=1）
-        member_r = await db.execute(
-            select(func.count(User.id)).where(User.dept_id == did, User.status == 1)
-        )
-        member_count = member_r.scalar() or 0
+        # 部门名（取第一个部门兜底）
+        dept_name = "全公司"
+        if user.dept_id:
+            dr = await db.execute(select(Department.name).where(Department.id == user.dept_id))
+            dept_name = dr.scalar_one_or_none() or "全公司"
 
-        # 部门成员ID列表
-        mids_r = await db.execute(select(User.id).where(User.dept_id == did))
-        mids = [r[0] for r in mids_r.all()]
-
-        # 团队雷达（各分类平均掌握度）—— LEFT JOIN 确保无条目的分类也显示
-        cat_r = await db.execute(
+        # 全部分类
+        cat_rows = await db.execute(
             select(
                 KnowledgeCategory.id,
                 KnowledgeCategory.name,
@@ -464,55 +610,60 @@ async def team_dashboard(
             .group_by(KnowledgeCategory.id, KnowledgeCategory.name, KnowledgeCategory.icon, KnowledgeCategory.description)
             .order_by(KnowledgeCategory.sort_order)
         )
-        cat_totals = {r[0]: {"name": r[1], "icon": r[2], "description": r[3], "total": r[4]} for r in cat_r.all()}
+        cat_info = {}
+        all_cat_ids = []
+        for r in cat_rows.all():
+            cid, name, icon, desc, total = r[0], r[1], r[2], r[3], r[4]
+            if total > 0:
+                cat_info[cid] = {"name": name, "icon": icon, "description": desc, "total": total}
+                all_cat_ids.append(cid)
 
+        # 聚合每个员工每分类的掌握度 → 再聚合为团队
+        cat_agg: Dict[int, dict] = {cid: {"correct": 0, "total_answered": 0, "user_count": 0} for cid in all_cat_ids}
+        for uid in all_mids:
+            member_mastery = await _calc_mastery_by_category(db, uid, all_cat_ids)
+            for cid, v in member_mastery.items():
+                if v["total"] > 0:  # 该员工在这个分类有答题数据
+                    cat_agg[cid]["correct"] += v["correct"]
+                    cat_agg[cid]["total_answered"] += v["total"]
+                    cat_agg[cid]["user_count"] += 1
+
+        # 雷达图
         radar_data = []
-        total_learned_all = 0
-        total_all = 0
-        for cat_id, info in cat_totals.items():
-            # 该分类下部门成员已学习的唯一条目总数
-            learned_r = await db.execute(
-                select(func.count(func.distinct(LearningRecord.knowledge_id)))
-                .join(KnowledgeEntry, KnowledgeEntry.id == LearningRecord.knowledge_id)
-                .where(
-                    LearningRecord.user_id.in_(mids) if mids else [0],
-                    KnowledgeEntry.category_id == cat_id,
-                )
-            )
-            learned_total = learned_r.scalar() or 0
-            # 按人数平均：该分类所有成员学到不同条目的总数/人数
-            avg_mastery = min(round(learned_total / info["total"] * 100, 1) if info["total"] > 0 else 0, 100)
+        for cid, info in cat_info.items():
+            agg = cat_agg[cid]
+            mastery = round(agg["correct"] / agg["total_answered"] * 100, 1) if agg["total_answered"] > 0 else 0
             radar_data.append({
-                "category_id": cat_id, "category_name": info["name"], "icon": info["icon"],
+                "category_id": cid,
+                "category_name": info["name"],
+                "icon": info["icon"],
                 "description": info.get("description") or "",
-                "mastery": avg_mastery, "total": info["total"],
+                "mastery": mastery,
+                "total": agg["total_answered"],  # 答题总数
+                "users": agg["user_count"],       # 参与人数
                 "expected": 80,
             })
-            total_learned_all += learned_total
-            total_all += info["total"]
-
         radar_data.sort(key=lambda x: x["mastery"])
-        # 过滤掉无知识条目的维度（total=0 掌握度永远是 0，无意义）
-        radar_data = [d for d in radar_data if d["total"] > 0]
-        weak_areas = radar_data[:3]
-        team_mastery = round(total_learned_all / (total_all * len(mids)) * 100, 1) if total_all > 0 and mids else 0
+        weak_areas = [d for d in radar_data if d["total"] > 0][:3]
+        if not weak_areas:
+            weak_areas = radar_data[:3]
+
+        all_correct = sum(v["correct"] for v in cat_agg.values())
+        all_answered = sum(v["total_answered"] for v in cat_agg.values())
+        team_mastery = round(all_correct / all_answered * 100, 1) if all_answered > 0 else 0
 
         # 成员排行榜（按积分）
         member_rank = []
-        for mid in mids:
+        for u in all_users:
             pr = await db.execute(
                 select(func.coalesce(func.sum(ExperiencePoint.points), 0))
-                .where(ExperiencePoint.user_id == mid)
+                .where(ExperiencePoint.user_id == u.id)
             )
             pts = pr.scalar() or 0
-            ur = await db.execute(
-                select(User.real_name, User.position).where(User.id == mid)
-            )
-            urow = ur.one_or_none()
             member_rank.append({
-                "user_id": mid,
-                "real_name": urow[0] if urow else "",
-                "position": urow[1] if urow else "",
+                "user_id": u.id,
+                "real_name": u.real_name,
+                "position": user_pos.get(u.id, ""),
                 "points": pts,
             })
         member_rank.sort(key=lambda x: x["points"], reverse=True)
@@ -521,7 +672,7 @@ async def team_dashboard(
         month_start = datetime.utcnow().replace(day=1)
         month_learned_r = await db.execute(
             select(func.count(LearningRecord.id)).where(
-                LearningRecord.user_id.in_(mids) if mids else [0],
+                LearningRecord.user_id.in_(all_mids) if all_mids else [0],
                 LearningRecord.created_at >= month_start,
             )
         )
@@ -529,7 +680,7 @@ async def team_dashboard(
 
         data = {
             "dept_name": dept_name,
-            "dept_id": did,
+            "dept_id": user.dept_id or 0,
             "member_count": member_count,
             "team_mastery": team_mastery,
             "month_new_learned": month_learned,
