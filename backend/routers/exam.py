@@ -359,6 +359,67 @@ async def question_pool(
 
 
 # ============================================================
+# 所有用户可查的公开试卷列表（含倒计时信息）
+# ============================================================
+
+@router.get("/exam/public-papers", response_model=ApiResponse)
+async def public_papers(user: User = Depends(get_current_user)):
+    """所有用户可查的公开试卷列表（不含试题详情）"""
+    async with async_session() as db:
+        now = datetime.utcnow()
+        pos = user.position.value if user.position else ""
+
+        result = await db.execute(
+            select(ExamPaper)
+            .where(ExamPaper.status == "active")
+            .order_by(ExamPaper.created_at.desc())
+        )
+        papers = result.scalars().all()
+
+        items = []
+        for p in papers:
+            # 判断该用户是否可以参加
+            can_enter = True
+            if p.target_type == "position" and p.target_value and p.target_value != pos:
+                can_enter = False
+
+            # 检查定时考试是否在窗口内
+            in_window = True
+            if p.time_mode == "scheduled":
+                if p.start_time and now < p.start_time:
+                    in_window = False
+                if p.end_time and now > p.end_time:
+                    in_window = False
+
+            # 检查是否已提交
+            att_r = await db.execute(
+                select(ExamAttempt).where(
+                    ExamAttempt.user_id == user.id,
+                    ExamAttempt.paper_id == p.id,
+                    ExamAttempt.status == "submitted",
+                )
+            )
+            already_submitted = att_r.scalar_one_or_none() is not None
+
+            items.append({
+                "id": p.id, "title": p.title,
+                "target_type": p.target_type,
+                "target_value": p.target_value,
+                "time_mode": p.time_mode,
+                "start_time": p.start_time.isoformat() if p.start_time else None,
+                "end_time": p.end_time.isoformat() if p.end_time else None,
+                "duration_minutes": p.duration_minutes,
+                "total_questions": p.total_questions,
+                "can_enter": can_enter and in_window,
+                "in_window": in_window,
+                "already_submitted": already_submitted,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            })
+
+    return ApiResponse(data={"items": items, "total": len(items)})
+
+
+# ============================================================
 # 职员端：可参加考试列表
 # ============================================================
 
