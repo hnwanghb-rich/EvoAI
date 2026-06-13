@@ -39,7 +39,7 @@ const paperDetail = ref<PaperDetail | null>(null)
 const showPaperDetail = ref(false)
 const showAutoGenerate = ref(false)
 const showManualCreate = ref(false)
-const autoForm = ref({ title: '', target_type: 'all', target_value: '', category_ids: [] as number[], question_count: 20, time_mode: 'anytime', start_time: '', end_time: '', duration_minutes: 60 })
+const autoForm = ref({ title: '', target_type: 'all', target_value: '', category_ids: [] as number[], question_count: 20, time_mode: 'anytime', start_date: '', start_time: '', end_date: '', end_time: '', duration_minutes: 60 })
 const autoLoading = ref(false)
 const allCategories = ref<{ id: number; name: string; knowledge_base: string; icon: string | null }[]>([])
 const poolKeyword = ref('')
@@ -51,7 +51,7 @@ const poolTotal = ref(0)
 const poolPage = ref(1)
 const poolLoading = ref(false)
 const selectedQids = ref<Set<number>>(new Set())
-const manualForm = ref({ title: '', target_type: 'all', target_value: '', time_mode: 'anytime', start_time: '', end_time: '', duration_minutes: 60 })
+const manualForm = ref({ title: '', target_type: 'all', target_value: '', time_mode: 'anytime', start_date: '', start_time: '', end_date: '', end_time: '', duration_minutes: 60 })
 const manualLoading = ref(false)
 
 const posLabel: Record<string, string> = { sales: '销售', tech: '技术', service: '客服', clerk: '文员', public: '公共' }
@@ -139,14 +139,17 @@ async function doAutoGenerate() {
   autoLoading.value = true
   try {
     const body: any = { ...autoForm.value }
-    if (body.start_time) body.start_time = new Date(body.start_time).toISOString()
-    if (body.end_time) body.end_time = new Date(body.end_time).toISOString()
+    if (body.start_date && body.start_time) body.start_time = new Date(body.start_date + 'T' + body.start_time).toISOString()
+    else { delete body.start_time; delete body.start_date }
+    if (body.end_date && body.end_time) body.end_time = new Date(body.end_date + 'T' + body.end_time).toISOString()
+    else { delete body.end_time; delete body.end_date }
+    delete body.start_date; delete body.end_date
     await axios.post('/api/exam/papers/auto-generate', body)
     showAutoGenerate.value = false; fetchPapers(); resetAutoForm()
   } catch (e: any) { alert(e.response?.data?.detail || '组卷失败') }
   finally { autoLoading.value = false }
 }
-function resetAutoForm() { autoForm.value = { title: '', target_type: 'all', target_value: '', category_ids: [], question_count: 20, time_mode: 'anytime', start_time: '', end_time: '', duration_minutes: 60 } }
+function resetAutoForm() { autoForm.value = { title: '', target_type: 'all', target_value: '', category_ids: [], question_count: 20, time_mode: 'anytime', start_date: '', start_time: '', end_date: '', end_time: '', duration_minutes: 60 } }
 async function fetchPool() {
   poolLoading.value = true
   try {
@@ -161,15 +164,18 @@ async function fetchPool() {
 }
 function poolSearch() { poolPage.value = 1; fetchPool() }
 function toggleQ(qid: number) { if (selectedQids.value.has(qid)) selectedQids.value.delete(qid); else selectedQids.value.add(qid) }
-function openManualCreate() { selectedQids.value = new Set(); manualForm.value = { title: '', target_type: 'all', target_value: '', time_mode: 'anytime', start_time: '', end_time: '', duration_minutes: 60 }; poolPage.value = 1; fetchPool(); showManualCreate.value = true }
+function openManualCreate() { selectedQids.value = new Set(); manualForm.value = { title: '', target_type: 'all', target_value: '', time_mode: 'anytime', start_date: '', start_time: '', end_date: '', end_time: '', duration_minutes: 60 }; poolPage.value = 1; fetchPool(); showManualCreate.value = true }
 async function doManualCreate() {
   if (!manualForm.value.title.trim()) { alert('请输入试卷名称'); return }
   if (selectedQids.value.size === 0) { alert('请至少选择1道题目'); return }
   manualLoading.value = true
   try {
     const body: any = { ...manualForm.value, question_ids: Array.from(selectedQids.value) }
-    if (body.start_time) body.start_time = new Date(body.start_time).toISOString()
-    if (body.end_time) body.end_time = new Date(body.end_time).toISOString()
+    if (body.start_date && body.start_time) body.start_time = new Date(body.start_date + 'T' + body.start_time).toISOString()
+    else { delete body.start_time; delete body.start_date }
+    if (body.end_date && body.end_time) body.end_time = new Date(body.end_date + 'T' + body.end_time).toISOString()
+    else { delete body.end_time; delete body.end_date }
+    delete body.start_date; delete body.end_date
     await axios.post('/api/exam/papers', body)
     showManualCreate.value = false; fetchPapers()
   } catch (e: any) { alert(e.response?.data?.detail || '创建失败') }
@@ -208,6 +214,24 @@ function countdownText(p: PublicPaper): string {
     return `剩余 ${m}分${s}秒`
   }
   return '已结束'
+}
+
+function timeStatus(p: PublicPaper): 'not_started' | 'in_progress' | 'ended' | 'anytime' {
+  if (p.time_mode === 'anytime') return 'anytime'
+  if (!p.start_time || !p.end_time) return 'anytime'
+  const now = nowTs.value
+  const start = new Date(p.start_time).getTime()
+  const end = new Date(p.end_time).getTime()
+  if (now < start) return 'not_started'
+  if (now < end) return 'in_progress'
+  return 'ended'
+}
+
+function formatTimeRange(p: PublicPaper): string {
+  if (p.time_mode !== 'scheduled' || !p.start_time || !p.end_time) return ''
+  const s = new Date(p.start_time)
+  const e = new Date(p.end_time)
+  return `${s.getFullYear()}-${String(s.getMonth()+1).padStart(2,'0')}-${String(s.getDate()).padStart(2,'0')} ${String(s.getHours()).padStart(2,'0')}:${String(s.getMinutes()).padStart(2,'0')} → ${e.getFullYear()}-${String(e.getMonth()+1).padStart(2,'0')}-${String(e.getDate()).padStart(2,'0')} ${String(e.getHours()).padStart(2,'0')}:${String(e.getMinutes()).padStart(2,'0')}`
 }
 
 function enterExamPublic(p: PublicPaper) {
@@ -379,15 +403,21 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
           <div class="exam-card-info">
             <h3>{{ p.title }}</h3>
             <div class="exam-card-meta">
-              <span>🎯 {{ targetLabel[p.target_type] || '全员' }}{{ p.target_value ? ' · ' + posLabel[p.target_value] || p.target_value : '' }}</span>
+              <span>🎯 {{ targetLabel[p.target_type] || '全员' }}{{ p.target_value ? ' · ' + (posLabel[p.target_value] || p.target_value) : '' }}</span>
               <span>📝 {{ p.total_questions }} 题</span>
               <span>⏱ {{ p.duration_minutes }} 分钟</span>
-              <span v-if="p.time_mode === 'scheduled'" class="countdown-badge" :class="{ urgent: !p.in_window }">{{ countdownText(p) }}</span>
-              <span v-else>随时可考</span>
             </div>
+            <div v-if="p.time_mode === 'scheduled'" class="exam-time-info">
+              <span class="exam-time-range">📅 {{ formatTimeRange(p) }}</span>
+              <span class="time-status-badge" :class="'ts-' + timeStatus(p)">
+                {{ timeStatus(p) === 'not_started' ? '⏳ 未开始' : timeStatus(p) === 'in_progress' ? '🟢 进行中' : timeStatus(p) === 'ended' ? '⛔ 已结束' : '随时可考' }}
+              </span>
+              <span class="countdown-badge" :class="{ urgent: timeStatus(p) === 'ended' }">{{ countdownText(p) }}</span>
+            </div>
+            <div v-else class="exam-time-info"><span class="time-status-badge ts-anytime">🟢 随时可考</span></div>
           </div>
           <button v-if="p.already_submitted" class="btn btn-sm" disabled>✅ 已交卷</button>
-          <button v-else-if="!p.can_enter" class="btn btn-sm" disabled>🚫 无权限</button>
+          <button v-else-if="!p.can_enter" class="btn btn-sm" disabled>🚫 不可进入</button>
           <button v-else class="btn" @click="enterExamPublic(p)">进入考试</button>
         </div>
       </div>
@@ -523,7 +553,15 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
               <div class="form-group"><label>考试时间模式</label><select v-model="autoForm.time_mode" class="form-input" style="width:100%"><option value="anytime">随时可考</option><option value="scheduled">定时考试</option></select></div>
               <div class="form-group"><label>答题限时（分钟）</label><input v-model.number="autoForm.duration_minutes" type="number" min="1" class="form-input" style="width:100px" /></div>
             </div>
-            <div v-if="autoForm.time_mode === 'scheduled'" class="form-row"><div class="form-group"><label>开始时间</label><input v-model="autoForm.start_time" type="datetime-local" class="form-input" style="width:100%" /></div><div class="form-group"><label>结束时间</label><input v-model="autoForm.end_time" type="datetime-local" class="form-input" style="width:100%" /></div></div>
+            <div v-if="autoForm.time_mode === 'scheduled'" class="scheduled-time-box">
+              <div class="form-group"><label>开始日期</label><input v-model="autoForm.start_date" type="date" class="form-input" style="width:100%" /></div>
+              <div class="form-group"><label>开始时间</label><input v-model="autoForm.start_time" type="time" class="form-input" style="width:100%" /></div>
+              <div class="form-group"><label>截止日期</label><input v-model="autoForm.end_date" type="date" class="form-input" style="width:100%" /></div>
+              <div class="form-group"><label>截止时间</label><input v-model="autoForm.end_time" type="time" class="form-input" style="width:100%" /></div>
+            </div>
+            <div v-if="autoForm.time_mode === 'scheduled' && autoForm.start_date && autoForm.end_date" class="scheduled-summary">
+              📅 {{ autoForm.start_date }} {{ autoForm.start_time || '00:00' }} → {{ autoForm.end_date }} {{ autoForm.end_time || '23:59' }}
+            </div>
           </div>
           <div class="modal-footer"><button class="btn btn-outline" @click="showAutoGenerate = false">取消</button><button class="btn" @click="doAutoGenerate" :disabled="autoLoading">{{ autoLoading ? '生成中...' : '🎲 随机组卷' }}</button></div>
         </div>
@@ -543,7 +581,12 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
                 <div class="form-group"><label>时限(分钟)</label><input v-model.number="manualForm.duration_minutes" type="number" min="1" class="form-input" style="width:80px" /></div>
                 <div class="form-group"><label>时间模式</label><select v-model="manualForm.time_mode" class="form-input" style="width:auto"><option value="anytime">随时</option><option value="scheduled">定时</option></select></div>
               </div>
-              <div v-if="manualForm.time_mode === 'scheduled'" class="form-row"><div class="form-group"><label>开始</label><input v-model="manualForm.start_time" type="datetime-local" class="form-input" style="width:100%" /></div><div class="form-group"><label>结束</label><input v-model="manualForm.end_time" type="datetime-local" class="form-input" style="width:100%" /></div></div>
+              <div v-if="manualForm.time_mode === 'scheduled'" style="display:flex;gap:8px;flex-wrap:wrap">
+                <div class="form-group"><label>开始日期</label><input v-model="manualForm.start_date" type="date" class="form-input" style="width:100%" /></div>
+                <div class="form-group"><label>开始时间</label><input v-model="manualForm.start_time" type="time" class="form-input" style="width:100px" /></div>
+                <div class="form-group"><label>截止日期</label><input v-model="manualForm.end_date" type="date" class="form-input" style="width:100%" /></div>
+                <div class="form-group"><label>截止时间</label><input v-model="manualForm.end_time" type="time" class="form-input" style="width:100px" /></div>
+              </div>
               <div class="pool-tools"><input v-model="poolKeyword" placeholder="搜索题目" class="form-input" style="width:150px" @keydown.enter="poolSearch" /><select v-model="poolPosition" @change="poolSearch" class="form-input" style="width:auto"><option value="">全部岗位</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option><option value="clerk">文员</option></select><select v-model="poolDifficulty" @change="poolSearch" class="form-input" style="width:auto"><option value="0">全部难度</option><option v-for="n in 5" :key="n" :value="n">{{ '★'.repeat(n) }}</option></select><button class="btn btn-sm" @click="poolSearch">搜索</button></div>
               <div class="pool-list" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
                 <div v-if="poolLoading" style="padding:20px;text-align:center;color:var(--text-sub)">加载中...</div>
@@ -626,7 +669,14 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
 .exam-card { padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
 .exam-card.exam-disabled { opacity: 0.55; }
 .exam-card-info h3 { margin: 0 0 6px; font-size: 15px; color: var(--text-main); }
-.exam-card-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-sub); align-items: center; flex-wrap: wrap; }
+.exam-card-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-sub); align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.exam-time-info { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.exam-time-range { color: var(--text-sub); }
+.time-status-badge { padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.time-status-badge.ts-not_started { background: rgba(232,130,74,0.1); color: var(--accent); }
+.time-status-badge.ts-in_progress { background: rgba(122,166,104,0.1); color: var(--success); }
+.time-status-badge.ts-ended { background: rgba(192,64,59,0.08); color: var(--danger); }
+.time-status-badge.ts-anytime { background: rgba(122,166,104,0.1); color: var(--success); }
 .countdown-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--bg-main); color: var(--primary); font-weight: 600; }
 .countdown-badge.urgent { color: var(--danger); }
 
@@ -693,6 +743,11 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
 .form-group label { display: block; font-size: 12px; color: var(--text-sub); margin-bottom: 3px; }
 .form-row { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
+
+/* 定时考试输入控件 */
+.scheduled-time-box { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: var(--bg-main); border: 1px dashed var(--primary); border-radius: 8px; margin-bottom: 6px; }
+.scheduled-time-box .form-group { margin-bottom: 0; min-width: 120px; }
+.scheduled-summary { font-size: 13px; color: var(--primary); font-weight: 600; margin-bottom: 10px; padding: 4px 10px; background: rgba(var(--primary-rgb, 74,144,226), 0.06); border-radius: 6px; display: inline-block; }
 
 @media (max-width: 768px) {
   .em-tools { flex-direction: column; }
