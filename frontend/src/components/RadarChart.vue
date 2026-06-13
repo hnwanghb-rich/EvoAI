@@ -26,10 +26,12 @@ function renderChart() {
     chart = echarts.init(chartRef.value)
   }
 
-  // 最多显示 10 个维度，优先显示掌握度低的（薄弱领域）
-  const displayData = props.data.length > 10
-    ? [...props.data].sort((a, b) => a.mastery - b.mastery).slice(0, 10)
-    : props.data
+  // 全部维度展示
+  const displayData = props.data
+
+  const count = displayData.length
+  const radarRadius = count <= 6 ? '40%' : count <= 10 ? '38%' : '34%'
+  const radarCenter = ['50%', '55%']
 
   const indicators = displayData.map(d => ({
     name: d.category_name,
@@ -54,16 +56,14 @@ function renderChart() {
     legend: {
       data: ['我的掌握度', '岗位期望'],
       bottom: 0,
-      textStyle: { color: 'var(--text-sub, #888)', fontSize: 12 },
+      textStyle: { color: '#888888', fontSize: 12 },
     },
     radar: {
-      center: ['50%', '52%'],
-      radius: '58%',
+      center: radarCenter,
+      radius: radarRadius,
       indicator: indicators,
-      axisName: { color: 'var(--text-main)', fontSize: 12, fontWeight: 500 },
-      name: {
-        textStyle: { color: 'var(--text-main)', fontSize: 12 },
-      },
+      axisName: { color: '#222222', fontSize: 12, fontWeight: 600 },
+      nameGap: 16,
     },
     series: [
       {
@@ -104,7 +104,7 @@ onMounted(() => { renderChart() })
 watch(() => props.data, () => { chart?.dispose(); chart = null; renderChart() }, { deep: true })
 onUnmounted(() => { chart?.dispose() })
 
-const h = computed(() => props.height || '420px')
+const h = computed(() => props.height || '520px')
 </script>
 
 <template>

@@ -89,45 +89,23 @@ async def _calc_mastery_by_category(db, user_id: int, cat_ids: list[int]) -> Dic
 
     if attempts:
         paper_ids = [a.paper_id for a in attempts]
-        # 获取试卷题目 + 正确答案 + 分类（三级 fallback: category_id → related_knowledge_id → target_position）
+        # 获取试卷题目 + 正确答案 + 分类
         pq_rows = await db.execute(
             select(
                 ExamPaperQuestion.paper_id,
                 DailyQuestion.id,
                 DailyQuestion.answer,
-                DailyQuestion.category_id,
-                KnowledgeEntry.category_id,
-                DailyQuestion.target_position,
+                func.coalesce(DailyQuestion.category_id, KnowledgeEntry.category_id).label("cid"),
             )
             .join(DailyQuestion, DailyQuestion.id == ExamPaperQuestion.question_id)
             .outerjoin(KnowledgeEntry, KnowledgeEntry.id == DailyQuestion.related_knowledge_id)
             .where(ExamPaperQuestion.paper_id.in_(paper_ids))
         )
 
-        # 预加载 target_position → knowledge_base → 第一个 category_id 的映射（fallback 用）
-        kb_cat_map: Dict[str, int] = {}
-        if cat_ids:
-            kb_cats = await db.execute(
-                select(
-                    KnowledgeCategory.knowledge_base,
-                    func.min(KnowledgeCategory.id),
-                )
-                .where(KnowledgeCategory.id.in_(cat_ids))
-                .group_by(KnowledgeCategory.knowledge_base)
-            )
-            kb_cat_map = {r[0]: r[1] for r in kb_cats.all() if r[0] and r[1]}
-
         # paper_id → [(qid, correct_answer, category_id), ...]
         paper_questions: Dict[int, list] = {}
         for row in pq_rows:
-            pid, qid, ans, dq_cid, ke_cid, target_pos = row[0], row[1], row[2], row[3], row[4], row[5]
-            # 三级 fallback
-            cid = dq_cid  # 优先 question 自身的 category_id
-            if cid is None:
-                cid = ke_cid  # 其次 related_knowledge → category_id
-            if cid is None and target_pos:
-                # 最终 fallback：target_position → knowledge_base → 分类
-                cid = kb_cat_map.get(target_pos)
+            pid, qid, ans, cid = row[0], row[1], row[2], row[3]
             if cid is None:
                 continue
             paper_questions.setdefault(pid, []).append((qid, ans.strip().lower(), cid))
