@@ -411,11 +411,11 @@ onMounted(async () => {
   <div class="km-page">
     <!-- Tab 切换 -->
     <div class="km-tabs">
-      <button :class="{ active: activeTab === 'browse' }" @click="switchTab('browse')">📖 知识浏览</button>
-      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'manage' }" @click="switchTab('manage')">⚙️ 知识导入</button>
-      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'category' }" @click="switchTab('category')">📂 知识类别</button>
+      <button :class="{ active: activeTab === 'browse' }" @click="switchTab('browse')">≡ 知识浏览</button>
+      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'manage' }" @click="switchTab('manage')">⌖ 知识导入</button>
+      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'category' }" @click="switchTab('category')">▤ 知识类别</button>
       <span style="margin-left:auto;font-size:12px;color:var(--text-sub)">知识 {{ total }} 条 · 题库 {{ questionTotal }} 题</span>
-      <button v-if="auth.isAdmin" class="btn btn-sm btn-outline" @click="showImport = true" style="margin-left:8px">📥 批量导入</button>
+      <button v-if="auth.isAdmin" class="btn btn-sm btn-outline" @click="showImport = true" style="margin-left:8px">▼ 批量导入</button>
     </div>
 
     <!-- ==================== 浏览 Tab ==================== -->
@@ -447,15 +447,15 @@ onMounted(async () => {
           <div class="kb-card-header">
             <h3>{{ item.title }}</h3>
             <div class="kb-badges">
-              <span v-if="item.item_type === 'knowledge'" class="kb-badge kb-badge-doc">📄 知识</span>
-              <span v-else class="kb-badge kb-badge-q">❓ 试题 · {{ typeLabel(item.question_type || '') }}</span>
+              <span v-if="item.item_type === 'knowledge'" class="kb-badge kb-badge-doc">≡ 知识</span>
+              <span v-else class="kb-badge kb-badge-q">◇ 试题 · {{ typeLabel(item.question_type || '') }}</span>
               <span class="kb-badge kb-badge-kb">{{ item.knowledge_base === 'public' ? '公共' : item.knowledge_base === 'sales' ? '销售' : item.knowledge_base === 'tech' ? '技术' : '客服' }}</span>
             </div>
           </div>
           <p class="kb-card-desc">{{ item.content }}</p>
           <div class="kb-card-meta">
             <span v-if="item.tags" class="kb-card-tags">{{ item.tags }}</span>
-            <span v-if="item.view_count > 0">👁 {{ item.view_count }}</span>
+            <span v-if="item.view_count > 0">◁ {{ item.view_count }}</span>
             <span>{{ difficultyDots(item.difficulty_level) }}</span>
           </div>
         </article>
@@ -472,7 +472,7 @@ onMounted(async () => {
             <div v-for="root in treeRoots" :key="root.key" class="tree-root">
               <div class="tree-root-header" @click="toggleCatRoot(root.key)">
                 <span class="tree-arrow">{{ catExpanded[root.key] ? '▼' : '▶' }}</span>
-                <span class="tree-root-icon">📁</span>
+                <span class="tree-root-icon">▤</span>
                 <span class="tree-root-label">{{ root.label }}</span>
                 <span class="tree-root-count">{{ root.children.length }} 个分类</span>
                 <button class="btn btn-xs" @click.stop="openCatCreate(root.key)" title="新增分类">+</button>
@@ -482,13 +482,13 @@ onMounted(async () => {
                   class="tree-node"
                   :class="{ active: selectedCat?.id === cat.id, inactive: !cat.is_active }"
                   @click="selectCat(cat)">
-                  <span class="tree-node-icon">{{ cat.icon || '📄' }}</span>
+                  <span class="tree-node-icon">{{ cat.icon || '◈' }}</span>
                   <span class="tree-node-name">{{ cat.name }}</span>
                   <span v-if="!cat.is_active" class="tree-disabled-tag">已停用</span>
                   <span class="tree-node-stats">{{ cat.knowledge_count }}知/{{ cat.question_count }}题</span>
                   <span class="tree-node-actions">
-                    <button class="btn btn-xs btn-outline" @click.stop="openCatEdit(cat)" title="编辑">✏️</button>
-                    <button class="btn btn-xs btn-outline" @click.stop="deleteCat(cat)" title="删除">🗑</button>
+                    <button class="btn btn-xs btn-outline" @click.stop="openCatEdit(cat)" title="编辑">✎</button>
+                    <button class="btn btn-xs btn-outline" @click.stop="deleteCat(cat)" title="删除">⊘</button>
                   </span>
                 </div>
                 <div v-if="root.children.length === 0" class="tree-empty">暂无分类，点击 + 新建</div>
@@ -501,10 +501,10 @@ onMounted(async () => {
         <div class="km-cat-right">
           <div class="km-cat-right-inner">
           <div v-if="selectedCat" class="cat-detail card">
-            <h3 class="cat-detail-name">{{ selectedCat.icon || '📄' }} {{ selectedCat.name }}</h3>
+            <h3 class="cat-detail-name">{{ selectedCat.icon || '◈' }} {{ selectedCat.name }}</h3>
             <div class="cat-detail-status">
               <span :class="selectedCat.is_active ? 'badge-active' : 'badge-disabled'">
-                {{ selectedCat.is_active ? '🟢 启用中' : '⛔ 已停用' }}
+                {{ selectedCat.is_active ? '◉ 启用中' : '⊘ 已停用' }}
               </span>
             </div>
             <div class="cat-detail-grid">
@@ -517,12 +517,12 @@ onMounted(async () => {
               <label>描述</label><p>{{ selectedCat.description }}</p>
             </div>
             <div class="cat-detail-actions">
-              <button class="btn btn-sm" @click="openCatEdit(selectedCat)">✏️ 编辑</button>
-              <button class="btn btn-sm btn-outline" @click="deleteCat(selectedCat)">🗑 {{ (selectedCat.knowledge_count > 0 || selectedCat.question_count > 0) ? '停用' : '删除' }}</button>
+              <button class="btn btn-sm" @click="openCatEdit(selectedCat)">✎ 编辑</button>
+              <button class="btn btn-sm btn-outline" @click="deleteCat(selectedCat)">⊘ {{ (selectedCat.knowledge_count > 0 || selectedCat.question_count > 0) ? '停用' : '删除' }}</button>
             </div>
           </div>
           <div v-else class="cat-detail-empty">
-            <p>👈 点击左侧分类查看详情</p>
+            <p>← 点击左侧分类查看详情</p>
           </div>
           </div>
         </div>
@@ -543,7 +543,7 @@ onMounted(async () => {
                   <option value="public">公共</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option>
                 </select>
               </div>
-              <div class="form-group"><label>图标</label><input v-model="catEditing.icon" class="form-input" style="width:100%" placeholder="如 🚗" /></div>
+              <div class="form-group"><label>图标</label><input v-model="catEditing.icon" class="form-input" style="width:100%" placeholder="如 ◈" /></div>
               <div class="form-group"><label>排序</label><input v-model.number="catEditing.sort_order" type="number" class="form-input" style="width:100px" /></div>
             </div>
             <div class="modal-footer">
@@ -619,7 +619,7 @@ onMounted(async () => {
       <div v-if="showImport" class="modal-overlay" @click.self="showImport = false">
         <div class="modal-panel-big">
           <div class="modal-header">
-            <h3>📥 批量智能导入</h3>
+            <h3>▼ 批量智能导入</h3>
             <button @click="showImport = false" class="btn btn-sm">×</button>
           </div>
           <div class="modal-body">
@@ -630,13 +630,13 @@ onMounted(async () => {
               <div class="form-group" style="width:110px"><label>目标岗位</label><select v-model="editing.knowledge_base" class="form-input" style="width:100%"><option value="public">公共</option><option value="sales">销售</option><option value="tech">技术</option><option value="service">客服</option></select></div>
               <div class="form-group" style="width:160px"><label>目标分类</label><select v-model="editing.category_id" class="form-input" style="width:100%"><option :value="0">自动匹配</option><option v-for="c in categories.filter(x => x.knowledge_base === editing.knowledge_base)" :key="c.id" :value="c.id">{{ c.icon }} {{ c.name }}</option></select></div>
               <div class="form-group"><button class="btn" @click="smartImport" :disabled="!importFile || importLoading" style="padding:10px 20px;font-size:14px;white-space:nowrap">
-                {{ importLoading ? '⏳ 解析中...' : '📄 解析上传文件' }}
+                {{ importLoading ? '⏳ 解析中...' : '▼ 解析上传文件' }}
               </button></div>
             </div>
             <!-- AI 拆题按钮（解析完成后才可点击） -->
             <div v-if="importSteps.length && importDone && !confirmDone" style="margin-bottom:14px">
               <button class="btn" @click="aiSplitOnly" :disabled="importLoading" style="padding:10px 20px;font-size:14px;background:var(--accent)">
-                {{ importLoading ? '⏳ AI拆分中...' : '🤖 AI拆分【执行对上传文案的拆题】' }}
+                {{ importLoading ? '⏳ AI拆分中...' : '⌘ AI拆分【执行对上传文案的拆题】' }}
               </button>
               <span style="margin-left:10px;font-size:12px;color:var(--text-sub)">已将文本解析完成，点击AI拆分生成试题草稿</span>
             </div>
@@ -673,7 +673,7 @@ onMounted(async () => {
             <!-- AI 复核面板 -->
             <div v-if="showReview && draftQuestions.length" class="review-section">
               <div class="review-head">
-                <span><b>📋 AI 生成了 {{ draftQuestions.length }} 道试题草稿</b>，请逐题复核</span>
+                <span><b>▤ AI 生成了 {{ draftQuestions.length }} 道试题草稿</b>，请逐题复核</span>
                 <div class="review-head-actions">
                   <button class="btn btn-sm btn-outline" @click="draftQuestions.forEach(d => d._selected = true)">全选</button>
                   <button class="btn btn-sm btn-outline" @click="draftQuestions.forEach(d => d._selected = false)">取消</button>

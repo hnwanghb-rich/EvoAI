@@ -259,14 +259,14 @@ onMounted(() => {
             :disabled="aiSplitting"
             @click="aiSplitQuestions(selected.id)"
           >
-            {{ aiSplitting ? '⏳ AI拆分中...' : '🤖 AI拆分试题' }}
+            {{ aiSplitting ? '⏳ AI拆分中...' : '⌘ AI拆分试题' }}
           </button>
           <button
             class="btn btn-sm btn-import"
             :disabled="drafts.length === 0 || importingQuestions"
             @click="batchImportQuestions"
           >
-            {{ importingQuestions ? '⏳ 入库中...' : '📥 试题入库' }}
+            {{ importingQuestions ? '⏳ 入库中...' : '▼ 试题入库' }}
           </button>
         </div>
         <div v-if="showReject" class="rd-reject">
@@ -287,7 +287,7 @@ onMounted(() => {
         <!-- AI拆分试题草稿 -->
         <div v-if="aiSplitMsg" class="rd-ai-msg">{{ aiSplitMsg }}</div>
         <div v-if="showDrafts && drafts.length > 0" class="rd-drafts">
-          <h4 style="margin:0 0 8px 0;color:var(--text-main)">📋 AI生成的题目草稿（{{ drafts.length }}道）</h4>
+          <h4 style="margin:0 0 8px 0;color:var(--text-main)">▤ AI生成的题目草稿（{{ drafts.length }}道）</h4>
           <div
             v-for="(d, di) in drafts" :key="di"
             class="rd-draft-item"
@@ -306,7 +306,7 @@ onMounted(() => {
             </div>
             <div class="draft-a">
               ✅ 答案：<strong>{{ d.answer }}</strong>
-              <span v-if="d.explanation"> | 💡 {{ d.explanation }}</span>
+              <span v-if="d.explanation"> | ◆ {{ d.explanation }}</span>
             </div>
           </div>
         </div>

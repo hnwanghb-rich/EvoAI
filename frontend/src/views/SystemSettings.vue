@@ -118,7 +118,7 @@ async function fetchCategories() {
   try { const { data } = await axios.get('/api/settings/categories'); catList.value = data.data } catch {/* */ }
 }
 function catOpenCreate() {
-  catIsEdit.value = false; catEditing.value = { name: '', knowledge_base: 'public', icon: '📄', sort_order: 0 }
+  catIsEdit.value = false; catEditing.value = { name: '', knowledge_base: 'public', icon: '◈', sort_order: 0 }
   catShowForm.value = true
 }
 function catOpenEdit(c: CatItem) { catIsEdit.value = true; catEditing.value = { ...c }; catShowForm.value = true }
@@ -127,7 +127,7 @@ async function catSave() {
   if (catIsEdit.value && q.id) {
     await axios.put(`/api/settings/categories/${q.id}`, null, { params: { name: q.name, knowledge_base: q.knowledge_base, icon: q.icon, sort_order: q.sort_order } })
   } else {
-    await axios.post('/api/settings/categories', null, { params: { name: q.name, knowledge_base: q.knowledge_base, icon: q.icon || '📄', sort_order: q.sort_order || 0 } })
+    await axios.post('/api/settings/categories', null, { params: { name: q.name, knowledge_base: q.knowledge_base, icon: q.icon || '◈', sort_order: q.sort_order || 0 } })
   }
   catShowForm.value = false; fetchCategories()
 }
@@ -209,7 +209,7 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories(); fetchAsrConfi
         <thead><tr><th>图标</th><th>名称</th><th>归属库</th><th>排序</th><th>知识数</th><th>试题数</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="c in catList" :key="c.id">
-            <td>{{ c.icon || '📄' }}</td>
+            <td>{{ c.icon || '◈' }}</td>
             <td>{{ c.name }}</td>
             <td>{{ c.knowledge_base === 'public' ? '公共' : c.knowledge_base === 'sales' ? '销售' : c.knowledge_base === 'tech' ? '技术' : '客服' }}</td>
             <td>{{ c.sort_order }}</td>
@@ -251,7 +251,7 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories(); fetchAsrConfi
         <div style="display:flex;gap:16px">
           <label class="asr-radio" :class="{ active: asrProvider === 'whisper' }" style="flex:1;padding:16px;border:2px solid var(--border);border-radius:10px;cursor:pointer;text-align:center;transition:border-color 0.15s">
             <input type="radio" v-model="asrProvider" value="whisper" @change="saveAsrConfig" style="display:none" />
-            <div style="font-size:28px;margin-bottom:6px">🖥️</div>
+            <div style="font-size:28px;margin-bottom:6px">⌘</div>
             <div style="font-weight:600;font-size:14px;margin-bottom:4px">本地 Whisper</div>
             <div style="font-size:11px;color:var(--text-sub)">免费 · 离线 · 无需密钥</div>
             <div v-if="asrProvider === 'whisper'" style="margin-top:6px;font-size:11px;color:var(--success);font-weight:600">✓ 当前使用中</div>
@@ -273,7 +273,7 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories(); fetchAsrConfi
           ✅ ASR 密钥已配置，可正常使用
         </div>
         <div class="form-group">
-          <label style="display:flex;justify-content:space-between;align-items:center"><span>SecretId</span><button type="button" class="btn btn-sm btn-outline" @click="toggleShowPlain" style="font-size:11px">{{ asrShowPlain ? '🔒 隐藏' : '👁 查看' }}</button></label>
+          <label style="display:flex;justify-content:space-between;align-items:center"><span>SecretId</span><button type="button" class="btn btn-sm btn-outline" @click="toggleShowPlain" style="font-size:11px">{{ asrShowPlain ? '⊘ 隐藏' : '◁ 查看' }}</button></label>
           <input v-model="asrSecretId" class="form-input" style="width:100%" :placeholder="asrConfigured ? '已配置（修改请输入新值）' : '腾讯云 API 密钥 SecretId'" />
         </div>
         <div class="form-group">
@@ -281,14 +281,14 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories(); fetchAsrConfi
           <input v-model="asrSecretKey" type="password" class="form-input" style="width:100%" :placeholder="asrConfigured ? '留空不修改（修改请输入新值）' : '腾讯云 API 密钥 SecretKey'" />
         </div>
         <p style="font-size:12px;color:var(--text-sub);margin-bottom:12px">
-          💡 密钥获取：登录 <a href="https://console.cloud.tencent.com/cam/capi" target="_blank" style="color:var(--primary)">腾讯云 API 密钥管理</a> → 新建密钥 → 复制粘贴到此处。
+          ◆ 密钥获取：登录 <a href="https://console.cloud.tencent.com/cam/capi" target="_blank" style="color:var(--primary)">腾讯云 API 密钥管理</a> → 新建密钥 → 复制粘贴到此处。
         </p>
       </div>
 
       <!-- 保存按钮 -->
       <div style="display:flex;align-items:center;gap:12px">
         <button class="btn" @click="saveAsrConfig" :disabled="asrSaving">
-          {{ asrSaving ? '保存中...' : '💾 保存配置' }}
+          {{ asrSaving ? '保存中...' : '✓ 保存配置' }}
         </button>
         <span v-if="asrMsg" :style="asrMsg.startsWith('✅') ? 'color:var(--success);font-size:13px' : 'color:var(--danger);font-size:13px'">{{ asrMsg }}</span>
       </div>
@@ -337,7 +337,7 @@ onMounted(() => { fetchSettings(); fetchLogs(); fetchCategories(); fetchAsrConfi
       <h3>数据导出</h3>
       <p class="ss-export-desc">导出知识库全部已通过的知识条目为 CSV 文件，可直接用 Excel 打开。</p>
       <button class="btn" @click="exportCSV" :disabled="exporting">
-        {{ exporting ? '生成中...' : '📥 导出知识库 CSV' }}
+        {{ exporting ? '生成中...' : '▼ 导出知识库 CSV' }}
       </button>
     </div>
   </div>

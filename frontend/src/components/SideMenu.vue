@@ -9,20 +9,22 @@ const auth = useAuthStore()
 interface MenuItem { path: string; label: string; icon: string; roles: string[] }
 
 const allMenus: MenuItem[] = [
-  { path: '/', label: '首页', icon: '🏠', roles: ['boss', 'admin', 'staff'] },
-  { path: '/knowledge-manage', label: '知识管理', icon: '📚', roles: ['boss', 'admin', 'staff'] },
-  { path: '/submit-experience', label: '提交经验', icon: '✏️', roles: ['staff'] },
-  { path: '/personal-dashboard', label: '个人看板', icon: '📊', roles: ['staff'] },
-  { path: '/learning', label: '学习中心', icon: '🎓', roles: ['staff'] },
-  { path: '/question', label: '每次一题', icon: '❓', roles: ['staff'] },
-  { path: '/exam-manage', label: '考试管理', icon: '📝', roles: ['boss', 'admin', 'staff'] },
-  { path: '/profile', label: '个人中心', icon: '👤', roles: ['boss', 'admin', 'staff'] },
-  { path: '/review', label: '审核中心', icon: '✅', roles: ['admin'] },
-  { path: '/team-dashboard', label: '团队看板', icon: '👥', roles: ['admin', 'boss'] },
-  { path: '/user-manage', label: '用户管理', icon: '👨‍👩‍👧', roles: ['admin'] },
-  { path: '/llm-settings', label: 'LLM配置', icon: '🤖', roles: ['admin'] },
-  { path: '/system-settings', label: '系统管理', icon: '🔧', roles: ['admin'] },
-  { path: '/bi-board', label: 'BI大屏', icon: '📈', roles: ['boss'] },
+  { path: '/', label: '首页', icon: '⌂', roles: ['boss', 'admin', 'staff'] },
+  { path: '/knowledge-manage', label: '知识管理', icon: '≡', roles: ['boss', 'admin', 'staff'] },
+  { path: '/submit-experience', label: '提交经验', icon: '✎', roles: ['staff'] },
+  { path: '/personal-dashboard', label: '个人看板', icon: '◱', roles: ['staff'] },
+  { path: '/learning', label: '学习中心', icon: '☆', roles: ['staff'] },
+  { path: '/question', label: '每次一题', icon: '◇', roles: ['staff'] },
+  { path: '/exam-manage', label: '考试管理', icon: '☐', roles: ['boss', 'admin', 'staff'] },
+  { path: '/profile', label: '个人中心', icon: '♢', roles: ['boss', 'admin', 'staff'] },
+  { path: '/review', label: '审核中心', icon: '✓', roles: ['admin'] },
+  { path: '/team-dashboard', label: '团队看板', icon: '⊟', roles: ['admin', 'boss'] },
+  { path: '/user-manage', label: '用户管理', icon: '⊶', roles: ['admin'] },
+  { path: '/llm-settings', label: 'LLM配置', icon: '⌘', roles: ['admin'] },
+  { path: '/bi-board', label: 'BI大屏', icon: '◈', roles: ['boss'] },
+  { path: '/flywheel/ops', label: '飞轮运营', icon: '↺', roles: ['admin'] },
+  { path: '/flywheel/biz', label: '业务协同', icon: '⇄', roles: ['admin', 'staff'] },
+  { path: '/system-settings', label: '系统管理', icon: '⌖', roles: ['admin'] },
 ]
 
 const menus = computed(() =>
@@ -88,6 +90,6 @@ function isActive(path: string) {
   border-left-color: var(--primary);
   font-weight: 600;
 }
-.menu-icon { font-size: 16px; width: 22px; text-align: center; }
+.menu-icon { font-size: 18px; width: 22px; text-align: center; line-height: 1; }
 .menu-label { white-space: nowrap; }
 </style>

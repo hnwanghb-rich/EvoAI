@@ -52,7 +52,7 @@ function callAneng() { chat.open = true }
 function goKnowledge(id: number) { router.push(`/knowledge/${id}`) }
 function reasonLabel(r: RecommendItem): string { return r.reason }
 function reasonIcon(t: string): string {
-  return t === 'weak' ? '📖' : t === 'hot' ? '🔥' : '💡'
+  return t === 'weak' ? '◁' : t === 'hot' ? '▲' : '◈'
 }
 function formatDuration(sec: number): string {
   if (sec < 60) return sec + '秒'
@@ -77,7 +77,7 @@ onMounted(fetchHome)
         <!-- 召唤阿能 -->
         <div class="home-aneng card" @click="callAneng">
           <div class="aneng-prompt">
-            <span class="aneng-big">🤖</span>
+            <span class="aneng-big">⌘</span>
             <div>
               <h3>遇到问题？问问阿能</h3>
               <p>点击此处或右下角按钮，24小时在线解答</p>
@@ -89,7 +89,7 @@ onMounted(fetchHome)
         <!-- 今日个性化推荐 -->
         <div class="section" v-if="data.recommends && data.recommends.length">
           <div class="section-head">
-            <h3>🎯 今日知识推送</h3>
+            <h3>◎ 今日知识推送</h3>
             <span class="section-sub">根据你的学习情况智能推荐</span>
           </div>
           <div class="recommend-list">
@@ -105,9 +105,9 @@ onMounted(fetchHome)
               <h4 class="rec-title">{{ rec.title }}</h4>
               <p class="rec-desc">{{ rec.content }}</p>
               <div class="rec-meta">
-                <span v-if="rec.car_brand">🚗 {{ rec.car_brand }}{{ rec.car_model ? ' ' + rec.car_model : '' }}</span>
-                <span>👁 {{ rec.view_count }}</span>
-                <span>👍 {{ rec.useful_count }}</span>
+                <span v-if="rec.car_brand">◈ {{ rec.car_brand }}{{ rec.car_model ? ' ' + rec.car_model : '' }}</span>
+                <span>◁ {{ rec.view_count }}</span>
+                <span>△ {{ rec.useful_count }}</span>
               </div>
             </div>
           </div>
@@ -116,7 +116,7 @@ onMounted(fetchHome)
         <!-- 学习进度 + 快捷入口 -->
         <div class="staff-grid">
           <div class="staff-stats card">
-            <h4>📊 学习概览</h4>
+            <h4>◱ 学习概览</h4>
             <div class="stat-row">
               <div class="stat-item">
                 <span class="stat-val">{{ data.overall_mastery ?? 0 }}%</span>
@@ -139,24 +139,24 @@ onMounted(fetchHome)
 
           <div class="staff-actions">
             <div class="home-card card" @click="router.push('/question')">
-              <span class="hc-icon">❓</span>
+              <span class="hc-icon">◇</span>
               <span class="hc-title">每次一题</span>
               <span class="hc-desc" :style="{ color: data.has_today_question ? 'var(--success)' : 'var(--text-sub)' }">
                 {{ data.has_today_question ? '待完成' : '今日已完成' }}
               </span>
             </div>
             <div class="home-card card" @click="router.push('/personal-dashboard')">
-              <span class="hc-icon">📊</span>
+              <span class="hc-icon">◱</span>
               <span class="hc-title">个人看板</span>
               <span class="hc-desc">雷达图+薄弱</span>
             </div>
             <div class="home-card card" @click="router.push('/submit-experience')">
-              <span class="hc-icon">✏️</span>
+              <span class="hc-icon">✎</span>
               <span class="hc-title">提交经验</span>
               <span class="hc-desc">分享即+积分</span>
             </div>
             <div class="home-card card" @click="router.push('/learning')">
-              <span class="hc-icon">🎓</span>
+              <span class="hc-icon">☆</span>
               <span class="hc-title">学习中心</span>
               <span class="hc-desc">课程+错题</span>
             </div>
@@ -195,34 +195,34 @@ onMounted(fetchHome)
         <!-- 快捷入口 -->
         <div class="home-cards">
           <div class="home-card card" @click="router.push('/review')" :style="{ borderColor: (data.pending_count ?? 0) > 0 ? 'var(--danger)' : 'var(--border)' }">
-            <span class="hc-icon">✅</span>
+            <span class="hc-icon">✓</span>
             <span class="hc-title">审核中心</span>
             <span class="hc-num" :style="{ color: (data.pending_count ?? 0) > 0 ? 'var(--danger)' : 'var(--text-sub)' }">{{ data.pending_count ?? 0 }}</span>
           </div>
           <div class="home-card card" @click="router.push('/team-dashboard')">
-            <span class="hc-icon">👥</span>
+            <span class="hc-icon">⊟</span>
             <span class="hc-title">团队看板</span>
             <span class="hc-num">{{ data.learning_rate ?? '--' }}%</span>
           </div>
           <div class="home-card card" @click="router.push('/knowledge-manage')">
-            <span class="hc-icon">📚</span>
+            <span class="hc-icon">≡</span>
             <span class="hc-title">知识管理</span>
             <span class="hc-desc">{{ data.kb_total ?? 0 }} 条</span>
           </div>
           <div class="home-card card" @click="router.push('/exam-manage')">
-            <span class="hc-icon">📝</span>
+            <span class="hc-icon">☐</span>
             <span class="hc-title">题库管理</span>
             <span class="hc-desc" :class="{ warn: (data.low_question_positions?.length ?? 0) > 0 }">
               {{ data.low_question_positions?.length ? '待补充' : '正常' }}
             </span>
           </div>
           <div class="home-card card" @click="router.push('/user-manage')">
-            <span class="hc-icon">👨‍👩‍👧</span>
+            <span class="hc-icon">⊶</span>
             <span class="hc-title">用户管理</span>
             <span class="hc-desc">{{ data.member_count ?? '--' }} 人</span>
           </div>
           <div class="home-card card" @click="router.push('/llm-settings')">
-            <span class="hc-icon">🤖</span>
+            <span class="hc-icon">⌘</span>
             <span class="hc-title">LLM配置</span>
             <span class="hc-desc">AI引擎</span>
           </div>
@@ -260,22 +260,22 @@ onMounted(fetchHome)
 
         <div class="home-cards">
           <div class="home-card card" @click="router.push('/bi-board')">
-            <span class="hc-icon">📈</span>
+            <span class="hc-icon">◈</span>
             <span class="hc-title">BI大屏</span>
             <span class="hc-desc">全屏数据</span>
           </div>
           <div class="home-card card" @click="router.push('/team-dashboard')">
-            <span class="hc-icon">👥</span>
+            <span class="hc-icon">⊟</span>
             <span class="hc-title">团队看板</span>
             <span class="hc-desc">部门掌握度</span>
           </div>
           <div class="home-card card" @click="router.push('/knowledge-manage')">
-            <span class="hc-icon">📚</span>
+            <span class="hc-icon">≡</span>
             <span class="hc-title">知识库</span>
             <span class="hc-desc">浏览搜索</span>
           </div>
           <div class="home-card card" @click="router.push('/profile')">
-            <span class="hc-icon">👤</span>
+            <span class="hc-icon">♢</span>
             <span class="hc-title">个人中心</span>
             <span class="hc-desc">积分排名</span>
           </div>

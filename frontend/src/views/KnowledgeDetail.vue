@@ -132,20 +132,20 @@ onUnmounted(() => recordLearning())
           </div>
         </div>
         <div class="kd-meta">
-          <span v-if="entry.source_person">👤 {{ entry.source_person }}</span>
+          <span v-if="entry.source_person">♢ {{ entry.source_person }}</span>
           <span v-if="entry.source_dept">{{ entry.source_dept }}</span>
-          <span v-if="entry.car_brand">🚗 {{ entry.car_brand }}{{ entry.car_model ? ' ' + entry.car_model : '' }}</span>
+          <span v-if="entry.car_brand">◈ {{ entry.car_brand }}{{ entry.car_model ? ' ' + entry.car_model : '' }}</span>
           <span>难度 {{ difficultyDots(entry.difficulty_level) }}</span>
           <span>版本 V{{ entry.version }}</span>
         </div>
         <div class="kd-stats">
-          <span>👁 {{ entry.view_count }} 次浏览</span>
-          <span>👍 {{ entry.useful_count }} 人觉得有用</span>
-          <span v-if="entry.created_at">📅 {{ entry.created_at?.slice(0, 10) }}</span>
+          <span>◁ {{ entry.view_count }} 次浏览</span>
+          <span>△ {{ entry.useful_count }} 人觉得有用</span>
+          <span v-if="entry.created_at">◷ {{ entry.created_at?.slice(0, 10) }}</span>
         </div>
         <div class="kd-actions">
           <button class="btn" :class="{ 'btn-outline': usefulClicked }" @click="markUseful" :disabled="usefulClicked">
-            {{ usefulClicked ? '已标记有用' : '👍 有用' }}
+            {{ usefulClicked ? '已标记有用' : '△ 有用' }}
           </button>
           <button class="btn btn-outline" @click="toggleFavorite">
             {{ favorited ? '★ 已收藏' : '☆ 收藏' }}
@@ -182,7 +182,7 @@ onUnmounted(() => recordLearning())
 
       <!-- 视频片段导航 -->
       <div v-if="clips.length" class="kd-clips card">
-        <h4>📹 同视频其他片段</h4>
+        <h4>▶ 同视频其他片段</h4>
         <div class="clips-list">
           <div
             v-for="c in clips" :key="c.id"

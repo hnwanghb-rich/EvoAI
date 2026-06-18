@@ -335,9 +335,9 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
   <div class="em-page">
     <!-- Tab 切换 -->
     <div class="em-tabs">
-      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'papers' }" @click="switchTab('papers')">📋 试卷管理</button>
-      <button :class="{ active: activeTab === 'exams' }" @click="switchTab('exams')">📢 考试信息</button>
-      <button :class="{ active: activeTab === 'mine' }" @click="switchTab('mine')">📝 我的考试</button>
+      <button v-if="auth.isAdmin" :class="{ active: activeTab === 'papers' }" @click="switchTab('papers')">▤ 试卷管理</button>
+      <button :class="{ active: activeTab === 'exams' }" @click="switchTab('exams')">◉ 考试信息</button>
+      <button :class="{ active: activeTab === 'mine' }" @click="switchTab('mine')">☐ 我的考试</button>
     </div>
 
     <!-- ==================== Tab 1: 试卷管理（管理员） ==================== -->
@@ -345,8 +345,8 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
       <div class="em-head">
         <h2 class="page-title">试卷管理</h2>
         <div class="em-actions">
-          <button class="btn btn-sm" @click="showAutoGenerate = true">🤖 自动组卷</button>
-          <button class="btn btn-sm btn-outline" @click="openManualCreate">📋 手动组卷</button>
+          <button class="btn btn-sm" @click="showAutoGenerate = true">⌘ 自动组卷</button>
+          <button class="btn btn-sm btn-outline" @click="openManualCreate">▤ 手动组卷</button>
           <button class="btn btn-sm" @click="openCreate">+ 新增题目</button>
         </div>
       </div>
@@ -366,7 +366,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
         <select v-model="typeFilter" @change="search" class="form-input" style="width:auto"><option value="">全部题型</option><option value="single_choice">单选</option><option value="multi_choice">多选</option><option value="true_false">判断</option><option value="fill_blank">填空</option></select>
         <div class="cat-dropdown">
           <button class="cat-dropdown-btn" @click="catDropdown = !catDropdown">
-            📂 {{ catSelectedLabel }} ▾
+            ▤ {{ catSelectedLabel }} ▾
           </button>
           <div v-if="catDropdown" class="cat-dropdown-backdrop" @click="catDropdown = false"></div>
           <div v-if="catDropdown" class="cat-dropdown-panel">
@@ -408,43 +408,43 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
     <!-- ==================== Tab 2: 考试信息（所有人） ==================== -->
     <div v-if="activeTab === 'exams'">
       <div class="em-head">
-        <h2 class="page-title">📢 公司考试</h2>
+        <h2 class="page-title">◉ 公司考试</h2>
       </div>
       <!-- 时间筛选 -->
       <div class="exam-filter-bar">
         <button :class="{ active: examTimeFilter === 'all' }" @click="examTimeFilter = 'all'">全部 ({{ publicPapers.length }})</button>
-        <button :class="{ active: examTimeFilter === 'not_started' }" @click="examTimeFilter = 'not_started'">⏳ 未开始</button>
-        <button :class="{ active: examTimeFilter === 'in_progress' }" @click="examTimeFilter = 'in_progress'">🟢 进行中</button>
-        <button :class="{ active: examTimeFilter === 'ended' }" @click="examTimeFilter = 'ended'">⛔ 已结束</button>
+        <button :class="{ active: examTimeFilter === 'not_started' }" @click="examTimeFilter = 'not_started'">◷ 未开始</button>
+        <button :class="{ active: examTimeFilter === 'in_progress' }" @click="examTimeFilter = 'in_progress'">◉ 进行中</button>
+        <button :class="{ active: examTimeFilter === 'ended' }" @click="examTimeFilter = 'ended'">⊘ 已结束</button>
       </div>
 
       <div v-if="publicLoading" style="text-align:center;padding:40px;color:var(--text-sub)">加载中...</div>
-      <div v-else-if="publicPapers.length === 0" style="text-align:center;padding:60px;color:var(--text-sub)"><div style="font-size:48px;margin-bottom:12px">📭</div><p>暂无考试</p></div>
+      <div v-else-if="publicPapers.length === 0" style="text-align:center;padding:60px;color:var(--text-sub)"><div style="font-size:48px;margin-bottom:12px">◇</div><p>暂无考试</p></div>
       <div v-else class="exam-list">
         <div v-for="p in filteredPublicPapers" :key="p.id" class="exam-card card">
           <div class="exam-card-left">
             <!-- 时间状态标签（每个考试都有） -->
             <div class="exam-status-col" :class="'status-' + timeStatus(p)">
-              <span class="exam-status-icon">{{ timeStatus(p) === 'not_started' ? '⏳' : timeStatus(p) === 'in_progress' ? '🟢' : timeStatus(p) === 'ended' ? '⛔' : '🟢' }}</span>
+              <span class="exam-status-icon">{{ timeStatus(p) === 'not_started' ? '◷' : timeStatus(p) === 'in_progress' ? '◉' : timeStatus(p) === 'ended' ? '⊘' : '◉' }}</span>
               <span class="exam-status-label">{{ timeStatus(p) === 'not_started' ? '未开始' : timeStatus(p) === 'in_progress' ? '进行中' : timeStatus(p) === 'ended' ? '已结束' : '已开始' }}</span>
             </div>
             <div class="exam-card-body">
               <h3>{{ p.title }}</h3>
               <div class="exam-card-meta">
-                <span>🎯 {{ targetLabel[p.target_type] || '全员' }}{{ p.target_value ? ' · ' + (posLabel[p.target_value] || p.target_value) : '' }}</span>
-                <span>📝 {{ p.total_questions }} 题</span>
-                <span>⏱ {{ p.duration_minutes }} 分钟</span>
+                <span>◎ {{ targetLabel[p.target_type] || '全员' }}{{ p.target_value ? ' · ' + (posLabel[p.target_value] || p.target_value) : '' }}</span>
+                <span>☐ {{ p.total_questions }} 题</span>
+                <span>◷ {{ p.duration_minutes }} 分钟</span>
               </div>
               <div v-if="p.time_mode === 'scheduled'" class="exam-time-info">
-                <span class="exam-time-range">📅 {{ formatTimeRange(p) }}</span>
+                <span class="exam-time-range">◷ {{ formatTimeRange(p) }}</span>
                 <span class="countdown-badge">{{ countdownText(p) }}</span>
               </div>
             </div>
           </div>
           <div class="exam-card-action">
-            <button v-if="p.already_submitted" class="btn btn-sm" disabled>✅ 已交卷</button>
+            <button v-if="p.already_submitted" class="btn btn-sm" disabled>✓ 已交卷</button>
             <button v-else-if="!p.can_enter" class="btn btn-sm" disabled>
-              {{ timeStatus(p) === 'not_started' ? '⏳ 未到时间' : timeStatus(p) === 'ended' ? '⛔ 已截止' : '🚫 无权限' }}
+              {{ timeStatus(p) === 'not_started' ? '◷ 未到时间' : timeStatus(p) === 'ended' ? '⊘ 已截止' : '⊗ 无权限' }}
             </button>
             <button v-else class="btn" @click="enterExamPublic(p)">进入考试</button>
           </div>
@@ -459,7 +459,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
         <!-- 结果页 -->
         <div v-if="submitted && examResult" class="exam-result">
           <div class="result-card">
-            <div class="result-icon">🎉</div><h2>考试完成！</h2>
+            <div class="result-icon">◆</div><h2>考试完成！</h2>
             <div class="result-score">{{ examResult.score }} <span>分</span></div>
             <div class="result-detail"><span>答对 {{ examResult.correct_count }} / {{ examResult.total_questions }} 题</span><span>正确率 {{ Math.round(examResult.correct_count / examResult.total_questions * 100) }}%</span></div>
             <button class="btn" @click="backToMyExams" style="margin-top:20px;padding:10px 40px">返回</button>
@@ -504,22 +504,22 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
 
       <!-- 考试列表 -->
       <div v-else>
-        <div class="em-head"><h2 class="page-title">📝 我的考试</h2></div>
+        <div class="em-head"><h2 class="page-title">☐ 我的考试</h2></div>
         <div v-if="mineLoading" style="text-align:center;padding:40px;color:var(--text-sub)">加载中...</div>
         <div v-else>
           <!-- 可参加的考试 -->
           <div v-if="availableExams.length" class="em-section">
-            <h3 class="em-section-title">📢 可参加的考试（{{ availableExams.length }}）</h3>
+            <h3 class="em-section-title">◉ 可参加的考试（{{ availableExams.length }}）</h3>
             <div class="exam-list">
               <div v-for="ex in availableExams" :key="'av-'+ex.id" class="exam-card card">
                 <div class="exam-card-info">
                   <h3>{{ ex.title }}</h3>
                   <div class="exam-card-meta">
-                    <span>📝 {{ ex.total_questions }} 题</span><span>⏱ {{ ex.duration_minutes }} 分钟</span>
+                    <span>☐ {{ ex.total_questions }} 题</span><span>◷ {{ ex.duration_minutes }} 分钟</span>
                     <span>{{ ex.time_mode === 'scheduled' ? '定时考试' : '随时可考' }}</span>
                   </div>
                 </div>
-                <button v-if="ex.already_submitted" class="btn btn-sm" disabled>✅ 已完成</button>
+                <button v-if="ex.already_submitted" class="btn btn-sm" disabled>✓ 已完成</button>
                 <button v-else class="btn" @click="startExam(ex.id)">开始考试</button>
               </div>
             </div>
@@ -527,7 +527,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
 
           <!-- 历史记录 -->
           <div v-if="historyExams.length" class="em-section">
-            <h3 class="em-section-title">📜 考试记录（{{ historyExams.length }} 次）</h3>
+            <h3 class="em-section-title">☐ 考试记录（{{ historyExams.length }} 次）</h3>
             <div class="table-responsive">
               <table class="em-table">
                 <thead><tr><th>试卷</th><th>得分</th><th>正确</th><th>状态</th><th>提交时间</th></tr></thead>
@@ -545,7 +545,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
           </div>
 
           <div v-if="!availableExams.length && !historyExams.length" style="text-align:center;padding:60px;color:var(--text-sub)">
-            <div style="font-size:48px;margin-bottom:12px">📭</div><p>暂无考试记录</p>
+            <div style="font-size:48px;margin-bottom:12px">◇</div><p>暂无考试记录</p>
           </div>
         </div>
       </div>
@@ -554,9 +554,9 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
     <!-- ========== 弹窗：试卷详情 ========== -->
     <Teleport to="body">
       <div v-if="showPaperDetail && paperDetail" class="modal-overlay" @click.self="showPaperDetail = false">
-        <div class="modal-panel-big"><div class="modal-header"><h3>📝 {{ paperDetail.title }}</h3><button @click="showPaperDetail = false" class="btn btn-sm">×</button></div>
+        <div class="modal-panel-big"><div class="modal-header"><h3>☐ {{ paperDetail.title }}</h3><button @click="showPaperDetail = false" class="btn btn-sm">×</button></div>
           <div class="modal-body">
-            <div class="paper-detail-meta"><span>🎯 {{ targetLabel[paperDetail.target_type] || '全员' }}{{ paperDetail.target_value ? ' · ' + paperDetail.target_value : '' }}</span><span>{{ timeLabel[paperDetail.time_mode] || paperDetail.time_mode }}</span><span>⏱ {{ paperDetail.duration_minutes }} 分钟</span><span v-if="paperDetail.time_mode === 'scheduled'">{{ paperDetail.start_time?.slice(0,16) }} ~ {{ paperDetail.end_time?.slice(0,16) }}</span></div>
+            <div class="paper-detail-meta"><span>◎ {{ targetLabel[paperDetail.target_type] || '全员' }}{{ paperDetail.target_value ? ' · ' + paperDetail.target_value : '' }}</span><span>{{ timeLabel[paperDetail.time_mode] || paperDetail.time_mode }}</span><span>◷ {{ paperDetail.duration_minutes }} 分钟</span><span v-if="paperDetail.time_mode === 'scheduled'">{{ paperDetail.start_time?.slice(0,16) }} ~ {{ paperDetail.end_time?.slice(0,16) }}</span></div>
             <h4 style="font-size:13px;margin:12px 0 6px">题目列表（{{ paperDetail.total_questions }} 题）</h4>
             <div class="paper-detail-qs"><div v-for="(q,i) in paperDetail.questions" :key="i" class="paper-q-item"><div class="pq-header">{{ i+1 }}. [{{ typeLabelShort[q.question_type] || q.question_type }}] {{ q.question_content.slice(0,80) }}</div><div class="pq-meta">答案：{{ q.answer }} | 难度：{{ '★'.repeat(q.difficulty_level) }}</div></div></div>
           </div>
@@ -567,7 +567,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
     <!-- ========== 弹窗：自动组卷 ========== -->
     <Teleport to="body">
       <div v-if="showAutoGenerate" class="modal-overlay" @click.self="showAutoGenerate = false">
-        <div class="modal-panel" style="width:700px"><div class="modal-header"><h3>🤖 自动组卷</h3><button @click="showAutoGenerate = false" class="btn btn-sm">×</button></div>
+        <div class="modal-panel" style="width:700px"><div class="modal-header"><h3>⌘ 自动组卷</h3><button @click="showAutoGenerate = false" class="btn btn-sm">×</button></div>
           <div class="modal-body">
             <div class="form-group"><label>试卷名称</label><input v-model="autoForm.title" class="form-input" style="width:100%" placeholder="如：2026Q2 销售岗位技能考核" /></div>
             <div class="form-row">
@@ -576,7 +576,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
               <div class="form-group"><label>题目数量</label><input v-model.number="autoForm.question_count" type="number" min="1" max="100" class="form-input" style="width:100px" /></div>
             </div>
             <div class="form-group"><label>知识类别（可选，不选则从全部题目随机）</label>
-              <div class="cat-check-grid"><label v-for="c in allCategories" :key="c.id" class="cat-check" :class="{ on: autoForm.category_ids.includes(c.id) }" @click="toggleCategory(c.id)">{{ c.icon || '📄' }} {{ c.name }}</label></div>
+              <div class="cat-check-grid"><label v-for="c in allCategories" :key="c.id" class="cat-check" :class="{ on: autoForm.category_ids.includes(c.id) }" @click="toggleCategory(c.id)">{{ c.icon || '◈' }} {{ c.name }}</label></div>
             </div>
             <div class="form-row">
               <div class="form-group"><label>考试时间模式</label><select v-model="autoForm.time_mode" class="form-input" style="width:100%"><option value="anytime">随时可考</option><option value="scheduled">定时考试</option></select></div>
@@ -589,10 +589,10 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
               <div class="form-group"><label>截止时间</label><input v-model="autoForm.end_time" type="time" class="form-input" style="width:100%" /></div>
             </div>
             <div v-if="autoForm.time_mode === 'scheduled' && autoForm.start_date && autoForm.end_date" class="scheduled-summary">
-              📅 {{ autoForm.start_date }} {{ autoForm.start_time || '00:00' }} → {{ autoForm.end_date }} {{ autoForm.end_time || '23:59' }}
+              ◷ {{ autoForm.start_date }} {{ autoForm.start_time || '00:00' }} → {{ autoForm.end_date }} {{ autoForm.end_time || '23:59' }}
             </div>
           </div>
-          <div class="modal-footer"><button class="btn btn-outline" @click="showAutoGenerate = false">取消</button><button class="btn" @click="doAutoGenerate" :disabled="autoLoading">{{ autoLoading ? '生成中...' : '🎲 随机组卷' }}</button></div>
+          <div class="modal-footer"><button class="btn btn-outline" @click="showAutoGenerate = false">取消</button><button class="btn" @click="doAutoGenerate" :disabled="autoLoading">{{ autoLoading ? '生成中...' : '◈ 随机组卷' }}</button></div>
         </div>
       </div>
     </Teleport>
@@ -600,7 +600,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
     <!-- ========== 弹窗：手动组卷 ========== -->
     <Teleport to="body">
       <div v-if="showManualCreate" class="modal-overlay" @click.self="showManualCreate = false">
-        <div class="modal-panel" style="width:1100px;max-width:97vw"><div class="modal-header"><h3>📋 手动组卷</h3><button @click="showManualCreate = false" class="btn btn-sm">×</button></div>
+        <div class="modal-panel" style="width:1100px;max-width:97vw"><div class="modal-header"><h3>▤ 手动组卷</h3><button @click="showManualCreate = false" class="btn btn-sm">×</button></div>
           <div class="modal-body" style="display:flex;gap:16px;flex-wrap:wrap">
             <div style="flex:1;min-width:400px">
               <div class="form-group"><label>试卷名称</label><input v-model="manualForm.title" class="form-input" style="width:100%" placeholder="输入试卷名称" /></div>
@@ -626,7 +626,7 @@ onUnmounted(() => { stopCountdown(); clearInterval(timer2); window.removeEventLi
               </div>
               <div style="margin-top:4px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:var(--text-sub)">共 {{ poolTotal }} 题</span><div style="display:flex;gap:4px"><button :disabled="poolPage<=1" @click="poolPage--;fetchPool()" class="btn btn-sm btn-outline">上一页</button><button :disabled="poolPage>=Math.ceil(poolTotal/50)" @click="poolPage++;fetchPool()" class="btn btn-sm btn-outline">下一页</button></div></div>
             </div>
-            <div style="width:280px;flex-shrink:0"><div class="selected-box"><h4 style="margin:0 0 8px;font-size:14px">✅ 已选题目（{{ poolSelectedCount }} 题）</h4><div style="margin-bottom:12px;font-size:12px;color:var(--text-sub);max-height:40vh;overflow-y:auto"><div v-for="qid in Array.from(selectedQids).slice(0, 20)" :key="qid" style="padding:2px 0">#{{ qid }} {{ poolItems.find(q => q.id === qid)?.question_content?.slice(0, 30) || '' }}...</div><div v-if="poolSelectedCount > 20" style="color:var(--text-sub)">... 还有 {{ poolSelectedCount - 20 }} 题</div></div><button class="btn" style="width:100%" @click="doManualCreate" :disabled="manualLoading || poolSelectedCount === 0">{{ manualLoading ? '创建中...' : `📋 创建试卷（${poolSelectedCount} 题）` }}</button></div></div>
+            <div style="width:280px;flex-shrink:0"><div class="selected-box"><h4 style="margin:0 0 8px;font-size:14px">✓ 已选题目（{{ poolSelectedCount }} 题）</h4><div style="margin-bottom:12px;font-size:12px;color:var(--text-sub);max-height:40vh;overflow-y:auto"><div v-for="qid in Array.from(selectedQids).slice(0, 20)" :key="qid" style="padding:2px 0">#{{ qid }} {{ poolItems.find(q => q.id === qid)?.question_content?.slice(0, 30) || '' }}...</div><div v-if="poolSelectedCount > 20" style="color:var(--text-sub)">... 还有 {{ poolSelectedCount - 20 }} 题</div></div><button class="btn" style="width:100%" @click="doManualCreate" :disabled="manualLoading || poolSelectedCount === 0">{{ manualLoading ? '创建中...' : `▤ 创建试卷（${poolSelectedCount} 题）` }}</button></div></div>
           </div>
         </div>
       </div>

@@ -90,10 +90,10 @@ onMounted(fetchData)
       <h2 class="page-title">{{ teamTitle }}</h2>
       <div class="td-pos-filter">
         <button :class="{ active: teamPosition === '' }" @click="teamPosition = ''; fetchData()">全部</button>
-        <button :class="{ active: teamPosition === 'sales' }" @click="teamPosition = 'sales'; fetchData()">💼 销售</button>
-        <button :class="{ active: teamPosition === 'tech' }" @click="teamPosition = 'tech'; fetchData()">🔧 技术</button>
-        <button :class="{ active: teamPosition === 'service' }" @click="teamPosition = 'service'; fetchData()">📞 客服</button>
-        <button :class="{ active: teamPosition === 'clerk' }" @click="teamPosition = 'clerk'; fetchData()">📋 文员</button>
+        <button :class="{ active: teamPosition === 'sales' }" @click="teamPosition = 'sales'; fetchData()">⇄ 销售</button>
+        <button :class="{ active: teamPosition === 'tech' }" @click="teamPosition = 'tech'; fetchData()">⚙ 技术</button>
+        <button :class="{ active: teamPosition === 'service' }" @click="teamPosition = 'service'; fetchData()">☏ 客服</button>
+        <button :class="{ active: teamPosition === 'clerk' }" @click="teamPosition = 'clerk'; fetchData()">☐ 文员</button>
       </div>
     </div>
 
@@ -130,7 +130,7 @@ onMounted(fetchData)
         <!-- 维度选择面板 -->
         <div class="td-dims card">
           <div class="dims-head">
-            <h3>🖊 可选维度</h3>
+            <h3>✎ 可选维度</h3>
             <div class="dims-quick">
               <span class="dim-link" @click="selectTopN(3)">前3</span>
               <span class="dim-link" @click="selectTopN(5)">前5</span>
@@ -143,7 +143,7 @@ onMounted(fetchData)
             <label v-for="d in allRadarData" :key="d.category_id" class="dim-item"
               :class="{ checked: selectedCats.has(d.category_id) }">
               <input type="checkbox" :checked="selectedCats.has(d.category_id)" @change="toggleCategory(d.category_id)" />
-              <span class="dim-icon">{{ d.icon || '📄' }}</span>
+              <span class="dim-icon">{{ d.icon || '◈' }}</span>
               <span class="dim-name">{{ d.category_name }}</span>
               <span class="dim-bar-bg">
                 <span class="dim-bar" :style="{ width: d.mastery + '%', background: d.mastery < 40 ? 'var(--danger)' : d.mastery < 70 ? 'var(--accent)' : 'var(--success)' }"></span>
@@ -155,7 +155,7 @@ onMounted(fetchData)
 
         <!-- 薄弱领域 -->
         <div class="card td-weak" v-if="weakAreas.length">
-          <h3>📉 薄弱领域</h3>
+          <h3>◁ 薄弱领域</h3>
           <div v-for="w in weakAreas" :key="w.category_name" class="td-weak-item">
             <span class="td-weak-name">{{ w.category_name }}</span>
             <span class="td-weak-bar-bg">
@@ -168,7 +168,7 @@ onMounted(fetchData)
 
       <!-- 成员排行 -->
       <div class="card" v-if="memberRank.length">
-        <h3>🏆 团队成员积分排行</h3>
+        <h3>◆ 团队成员积分排行</h3>
         <table class="td-table">
           <thead><tr><th>排名</th><th>姓名</th><th>岗位</th><th>积分</th><th>进度</th></tr></thead>
           <tbody>

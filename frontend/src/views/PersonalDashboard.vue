@@ -156,7 +156,7 @@ onMounted(fetchDashboard)
         <!-- 维度选择面板 -->
         <div class="pd-dims card">
           <div class="dims-head">
-            <h3>🖊 可选维度</h3>
+            <h3>✎ 可选维度</h3>
             <div class="dims-quick">
               <span class="dim-link" @click="selectTopN(3)">前3</span>
               <span class="dim-link" @click="selectTopN(5)">前5</span>
@@ -169,7 +169,7 @@ onMounted(fetchDashboard)
             <label v-for="d in allRadarData" :key="d.category_id" class="dim-item"
               :class="{ checked: selectedCats.has(d.category_id) }">
               <input type="checkbox" :checked="selectedCats.has(d.category_id)" @change="toggleCategory(d.category_id)" />
-              <span class="dim-icon">{{ d.icon || '📄' }}</span>
+              <span class="dim-icon">{{ d.icon || '◈' }}</span>
               <span class="dim-name">{{ d.category_name }}</span>
               <span class="dim-score">{{ d.learned }}/{{ d.total }}</span>
               <span class="dim-pct">{{ d.mastery }}%</span>
@@ -181,10 +181,10 @@ onMounted(fetchDashboard)
       <!-- 薄弱领域 + 最近学习 -->
       <div class="pd-bottom">
         <div class="pd-weak card" v-if="weakAreas.length">
-          <h3>📉 薄弱领域</h3>
+          <h3>◁ 薄弱领域</h3>
           <div class="weak-list">
             <div v-for="w in weakAreas" :key="w.category_id" class="weak-item" @click="goLearning()">
-              <span class="weak-icon">{{ w.icon || '📄' }}</span>
+              <span class="weak-icon">{{ w.icon || '◈' }}</span>
               <span class="weak-name">{{ w.category_name }}</span>
               <span class="weak-bar-bg">
                 <span class="weak-bar" :style="{ width: w.mastery + '%' }"></span>
@@ -195,7 +195,7 @@ onMounted(fetchDashboard)
         </div>
 
         <div class="pd-recent card" v-if="recentRecords.length">
-          <h3>📝 最近学习</h3>
+          <h3>☐ 最近学习</h3>
           <div class="recent-list">
             <div v-for="r in recentRecords.slice(0, 10)" :key="r.id" class="recent-item" @click="goKnowledge(r.knowledge_id)">
               <span class="recent-title">{{ r.knowledge_title }}</span>

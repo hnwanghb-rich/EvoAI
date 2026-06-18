@@ -19,6 +19,17 @@ const routes = [
   { path: '/user-manage', name: 'UserManage', component: () => import('./views/UserManage.vue'), meta: { admin: true } },
   { path: '/llm-settings', name: 'LLMSettings', component: () => import('./views/LLMSettings.vue'), meta: { admin: true } },
   { path: '/system-settings', name: 'SystemSettings', component: () => import('./views/SystemSettings.vue'), meta: { admin: true } },
+  { path: '/flywheel/ops', name: 'FlywheelOps', component: () => import('./views/flywheel/FlywheelOps.vue'), meta: { admin: true } },
+  { path: '/flywheel/biz', name: 'BizCollab', component: () => import('./views/flywheel/BizCollab.vue') },
+  // 旧路径兼容重定向
+  { path: '/flywheel/gap', redirect: '/flywheel/ops' },
+  { path: '/flywheel/overview', redirect: '/flywheel/ops' },
+  { path: '/flywheel/prereview', redirect: '/flywheel/ops' },
+  { path: '/flywheel/expiry', redirect: '/flywheel/ops' },
+  { path: '/flywheel/sales', redirect: '/flywheel/biz' },
+  { path: '/flywheel/repair', redirect: '/flywheel/biz' },
+  { path: '/flywheel/service', redirect: '/flywheel/biz' },
+  { path: '/flywheel/crossline', redirect: '/flywheel/biz' },
 ]
 
 const router = createRouter({

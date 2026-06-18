@@ -139,14 +139,14 @@ function formatTime(s: number) { return `${Math.floor(s/60)}:${String(s%60).padS
           <button
             v-if="!recording && !voiceTranscribing"
             type="button" class="btn btn-sm btn-outline" @click="startRecording"
-          >🎤 语音录入</button>
+          >◎ 语音录入</button>
           <button
             v-if="recording"
             type="button"
             class="aneng-mic-recording"
             @click="stopRecording"
             title="停止录音"
-          >🎤 {{ formatTime(recordingTime) }}</button>
+          >◎ {{ formatTime(recordingTime) }}</button>
           <span v-if="voiceTranscribing" class="voice-trans-hint">⏳ 转写中...</span>
           <span v-if="!recording && !voiceTranscribing" class="voice-hint">点击录音，自动转写为文字填入内容框</span>
         </div>
@@ -174,7 +174,7 @@ function formatTime(s: number) { return `${Math.floor(s/60)}:${String(s%60).padS
 
       <div class="form-group"><label>标签（用 / 分隔）</label><input v-model="tags" placeholder="如：星瑞/谈判/价格" class="form-input" style="width:100%" /></div>
 
-      <div class="exp-info"><h4>💡 提交须知</h4>
+      <div class="exp-info"><h4>◆ 提交须知</h4>
         <ul>
           <li>提交后获得 <b>+1 积分</b>，审核通过再得 <b>+10 积分</b></li>
           <li>被同事点击"有用"可获得 <b>+2 积分/次</b></li>

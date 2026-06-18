@@ -57,10 +57,10 @@ const capLoading = ref(false)
 const capSaving = ref(false)
 
 const positions = [
-  { key: 'sales', label: '销售', icon: '💼' },
-  { key: 'tech', label: '技术', icon: '🔧' },
-  { key: 'service', label: '客服', icon: '📞' },
-  { key: 'clerk', label: '文员', icon: '📋' },
+  { key: 'sales', label: '销售', icon: '⇄' },
+  { key: 'tech', label: '技术', icon: '⚙' },
+  { key: 'service', label: '客服', icon: '☏' },
+  { key: 'clerk', label: '文员', icon: '☐' },
 ]
 
 const kbLabel: Record<string, string> = { public: '公共', sales: '销售', tech: '技术', service: '客服' }
@@ -117,8 +117,8 @@ onMounted(fetchList)
   <div class="um-page">
     <!-- Tab 切换 -->
     <div class="um-tabs">
-      <button :class="{ active: activeTab === 'users' }" @click="switchTab('users')">👥 用户管理</button>
-      <button :class="{ active: activeTab === 'capability' }" @click="switchTab('capability')">🎯 岗位知识能力</button>
+      <button :class="{ active: activeTab === 'users' }" @click="switchTab('users')">⊟ 用户管理</button>
+      <button :class="{ active: activeTab === 'capability' }" @click="switchTab('capability')">◎ 岗位知识能力</button>
     </div>
 
     <!-- ==================== Tab 1: 用户管理 ==================== -->
@@ -184,7 +184,7 @@ onMounted(fetchList)
             <div v-if="catExpanded[kb]" class="cap-tree-children">
               <label v-for="c in allCats.filter(x => x.knowledge_base === kb)" :key="c.id" class="cap-check-item" :class="{ checked: checkedCats.has(c.id) }">
                 <input type="checkbox" :checked="checkedCats.has(c.id)" @change="toggleCat(c.id)" />
-                <span>{{ c.icon || '📄' }} {{ c.name }}</span>
+                <span>{{ c.icon || '◈' }} {{ c.name }}</span>
               </label>
             </div>
           </div>
@@ -192,7 +192,7 @@ onMounted(fetchList)
 
         <div class="cap-actions">
           <button class="btn btn-sm btn-outline" @click="selectPosition(selectedPosition)" :disabled="capLoading">重置</button>
-          <button class="btn" @click="saveCapabilities" :disabled="capSaving">{{ capSaving ? '保存中...' : `💾 保存（${checkedCats.size} 个分类）` }}</button>
+          <button class="btn" @click="saveCapabilities" :disabled="capSaving">{{ capSaving ? '保存中...' : `✓ 保存（${checkedCats.size} 个分类）` }}</button>
         </div>
       </div>
     </div>

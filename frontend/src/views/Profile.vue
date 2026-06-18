@@ -69,7 +69,7 @@ onMounted(fetchData)
           <p>{{ auth.user?.username }} | {{ auth.isBoss ? '老板' : auth.isAdmin ? '管理员' : '职员' }}</p>
           <p v-if="auth.user?.phone">{{ auth.user.phone }}</p>
         </div>
-        <button class="btn btn-sm btn-outline" @click="showSkinPanel = !showSkinPanel">🎨 皮肤</button>
+        <button class="btn btn-sm btn-outline" @click="showSkinPanel = !showSkinPanel">◫ 皮肤</button>
       </div>
 
       <!-- 皮肤选择面板 -->
@@ -106,7 +106,7 @@ onMounted(fetchData)
       <!-- 我的提交 -->
       <div class="card" style="margin-top:12px">
         <div class="section-head">
-          <h3>📝 我的提交</h3>
+          <h3>☐ 我的提交</h3>
           <router-link to="/submit-experience" class="btn btn-sm">+ 提交经验</router-link>
         </div>
         <div v-if="submissions.length === 0" class="empty-hint">暂无提交记录</div>

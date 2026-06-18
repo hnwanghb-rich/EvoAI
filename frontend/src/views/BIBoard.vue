@@ -133,7 +133,7 @@ onUnmounted(() => {
 <template>
   <div class="bi-page" :class="{ fullscreen: isFullscreen }">
     <div class="bi-head">
-      <h2>📊 合群汽车集团 · BI 数据大屏</h2>
+      <h2>◈ 合群汽车集团 · BI 数据大屏</h2>
       <button class="btn btn-sm" @click="toggleFullscreen">{{ isFullscreen ? '退出全屏' : '⛶ 全屏' }}</button>
     </div>
 
@@ -186,11 +186,11 @@ onUnmounted(() => {
           <div v-if="deadDepts.length" class="alert-list">
             <p v-for="d in deadDepts" :key="d.dept_name">⚠ {{ d.dept_name }}</p>
           </div>
-          <div v-else class="empty-chart">🎉 各部门近期均有贡献</div>
+          <div v-else class="empty-chart">◆ 各部门近期均有贡献</div>
         </div>
         <!-- 预警：未命中 -->
         <div class="bi-cell card">
-          <h4>🔴 高频未命中问题</h4>
+          <h4>▲ 高频未命中问题</h4>
           <div v-if="noHitTop5.length" class="alert-list">
             <p v-for="n in noHitTop5" :key="n.question">{{ n.question.slice(0, 40) }}... ({{ n.count }}次)</p>
           </div>

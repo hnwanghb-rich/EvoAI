@@ -77,7 +77,7 @@ onMounted(fetchToday)
     <h2 class="page-title">每次一题</h2>
 
     <div v-if="loading" class="qa-loading">加载中...</div>
-    <div v-else-if="noQuestion" class="qa-empty">🎉 题库中暂无适合您的题目</div>
+    <div v-else-if="noQuestion" class="qa-empty">◇ 题库中暂无适合您的题目</div>
 
     <template v-else-if="question">
       <div class="qa-card card">

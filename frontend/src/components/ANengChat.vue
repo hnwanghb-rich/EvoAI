@@ -125,8 +125,14 @@ watch(() => chat.open, (v) => {
 watch(() => chat.messages.length, scrollBottom)
 
 // === 语音输入 ===
+const voiceError = ref('')
+
 async function startVoice() {
-  if (!navigator.mediaDevices?.getUserMedia) return
+  voiceError.value = ''
+  if (!navigator.mediaDevices?.getUserMedia) {
+    voiceError.value = '当前浏览器不支持录音（请使用 Chrome/Edge）'
+    return
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
@@ -140,7 +146,6 @@ async function startVoice() {
       form.append('file', blob, 'chat-voice.webm')
       try {
         const { data } = await axios.post('/api/voice/upload', form)
-        // poll for transcript
         let retries = 0
         const poll = setInterval(async () => {
           retries++
@@ -154,11 +159,11 @@ async function startVoice() {
             if (retries > 30) clearInterval(poll)
           } catch { clearInterval(poll) }
         }, 1500)
-      } catch { /* ignore */ }
+      } catch { voiceError.value = '语音上传失败' }
     }
     recorder.start(250)
     recording.value = true
-  } catch { /* mic denied */ }
+  } catch { voiceError.value = '麦克风权限被拒绝' }
 }
 
 function stopVoice() {
@@ -182,7 +187,7 @@ function stopVoice() {
     :class="{ dragging: dragging }"
     title="拖动移动 · 点击召唤阿能"
   >
-    <span class="aneng-icon">🤖</span>
+    <span class="aneng-icon">⌘</span>
     <span class="aneng-label">阿能</span>
   </button>
 
@@ -193,11 +198,11 @@ function stopVoice() {
         <!-- 头部 -->
         <div class="aneng-header">
           <div class="aneng-title">
-            <span class="aneng-avatar">🤖</span>
+            <span class="aneng-avatar">⌘</span>
             <span>数字老师 · 阿能</span>
           </div>
           <div class="aneng-head-actions">
-            <button class="aneng-btn-icon" @click="chat.clearChat()" title="清空对话">🗑</button>
+            <button class="aneng-btn-icon" @click="chat.clearChat()" title="清空对话">⊘</button>
             <button class="aneng-btn-icon" @click="chat.toggle()">×</button>
           </div>
         </div>
@@ -214,18 +219,18 @@ function stopVoice() {
               <!-- 来源标识 -->
               <div v-if="msg.role === 'assistant' && msg.source && !msg.streaming" class="msg-source">
                 <span v-if="msg.source === 'knowledge_base'" class="source-badge kb" title="来自企业知识库">
-                  📚 知识库 · 匹配度 {{ ((msg.confidence || 0) * 100).toFixed(0) }}%
+                  ≡ 知识库 · 匹配度 {{ ((msg.confidence || 0) * 100).toFixed(0) }}%
                 </span>
                 <span v-else-if="msg.source === 'llm'" class="source-badge llm" title="AI大模型生成">
-                  🤖 AI生成 · 基于检索
+                  ⌘ AI生成 · 基于检索
                 </span>
                 <span v-else-if="msg.source === 'llm_no_match'" class="source-badge llm-no" title="AI通用知识兜底">
-                  🌐 通用知识 · 知识库无匹配
+                  ◎ 通用知识 · 知识库无匹配
                 </span>
               </div>
               <!-- 引用卡片 -->
               <div v-if="msg.references && msg.references.length && msg.role === 'assistant' && !msg.streaming" class="msg-refs">
-                <div class="refs-title">📚 参考来源：</div>
+                <div class="refs-title">≡ 参考来源：</div>
                 <div
                   v-for="ref in msg.references" :key="ref.id"
                   class="ref-item"
@@ -262,9 +267,10 @@ function stopVoice() {
             @click="recording ? stopVoice() : startVoice()"
             :title="recording ? '停止录音' : '语音输入'"
           >
-            🎤
+            ◎
           </button>
         </div>
+        <div v-if="voiceError" class="aneng-voice-error">{{ voiceError }}</div>
       </div>
     </div>
   </Teleport>
@@ -397,6 +403,7 @@ function stopVoice() {
 .aneng-mic:hover { background: var(--border); }
 .aneng-mic-recording { background: var(--danger); animation: mic-pulse 1s infinite; }
 @keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.aneng-voice-error { padding: 4px 12px; font-size: 11px; color: var(--danger); }
 
 /* 手机全屏 */
 @media (max-width: 768px) {

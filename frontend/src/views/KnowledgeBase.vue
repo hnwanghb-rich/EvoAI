@@ -125,11 +125,11 @@ onMounted(async () => {
         <ul class="cat-tree">
           <li v-for="cat in categories.filter(c => kbList.includes(c.knowledge_base))" :key="cat.id"
             :class="{ active: selectedCat === cat.id }" @click="selectCat(cat.id)">
-            <span class="cat-icon">{{ cat.icon || '📄' }}</span>
+            <span class="cat-icon">{{ cat.icon || '◈' }}</span>
             <span class="cat-name">{{ cat.name }}</span>
             <span class="cat-counts">
-              <span v-if="cat.knowledge_count" class="cc-k">📚{{ cat.knowledge_count }}</span>
-              <span v-if="cat.question_count" class="cc-q">❓{{ cat.question_count }}</span>
+              <span v-if="cat.knowledge_count" class="cc-k">≡{{ cat.knowledge_count }}</span>
+              <span v-if="cat.question_count" class="cc-q">◇{{ cat.question_count }}</span>
             </span>
           </li>
         </ul>
@@ -148,15 +148,15 @@ onMounted(async () => {
             <div class="kb-card-header">
               <h3>{{ item.title }}</h3>
               <div class="kb-badges">
-                <span v-if="item.item_type === 'knowledge'" class="kb-badge kb-badge-doc">📄 知识</span>
-                <span v-else class="kb-badge kb-badge-q">❓ 试题 · {{ typeLabel(item.question_type || '') }}</span>
+                <span v-if="item.item_type === 'knowledge'" class="kb-badge kb-badge-doc">≡ 知识</span>
+                <span v-else class="kb-badge kb-badge-q">◇ 试题 · {{ typeLabel(item.question_type || '') }}</span>
                 <span class="kb-badge kb-badge-kb">{{ kbLabel[item.knowledge_base] || item.knowledge_base }}</span>
               </div>
             </div>
             <p class="kb-card-desc">{{ item.content }}</p>
             <div class="kb-card-meta">
               <span v-if="item.tags" class="kb-card-tags">{{ item.tags }}</span>
-              <span class="kb-card-stats" v-if="item.view_count > 0">👁 {{ item.view_count }}</span>
+              <span class="kb-card-stats" v-if="item.view_count > 0">◁ {{ item.view_count }}</span>
               <span>{{ difficultyDots(item.difficulty_level) }}</span>
               <span class="kb-card-date">{{ item.created_at?.slice(0, 10) }}</span>
             </div>

@@ -15,6 +15,20 @@ FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
 formatter = logging.Formatter(FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
 
 
+class SafeTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
+    """Windows 多进程（reload / 多 workers）下，午夜轮转执行 os.rename 时，
+    日志文件常被其他进程占用而抛 PermissionError([WinError 32])，导致 logging
+    模块向 stderr 刷错误栈。此处静默跳过本次轮转——继续写入当前文件，下次轮转
+    时再试。日志内容不丢失，仅当天文件可能不切分。"""
+
+    def rotate(self, source, dest):
+        try:
+            super().rotate(source, dest)
+        except (PermissionError, OSError):
+            # 文件被占用，跳过本次轮转，保持写入当前文件
+            pass
+
+
 def setup_logging(app_name: str = "hqevoai"):
     """初始化全局日志配置"""
     root = logging.getLogger()
@@ -31,7 +45,7 @@ def setup_logging(app_name: str = "hqevoai"):
 
     # 2. 全部日志文件（INFO+，按天轮转，保留30天）
     info_file = LOG_DIR / f"{app_name}.log"
-    file_handler = logging.handlers.TimedRotatingFileHandler(
+    file_handler = SafeTimedRotatingFileHandler(
         info_file, when="midnight", interval=1, backupCount=30, encoding="utf-8"
     )
     file_handler.setLevel(logging.INFO)
@@ -40,7 +54,7 @@ def setup_logging(app_name: str = "hqevoai"):
 
     # 3. 错误日志单独文件（ERROR+，按天轮转，保留90天）
     error_file = LOG_DIR / f"{app_name}_error.log"
-    error_handler = logging.handlers.TimedRotatingFileHandler(
+    error_handler = SafeTimedRotatingFileHandler(
         error_file, when="midnight", interval=1, backupCount=90, encoding="utf-8"
     )
     error_handler.setLevel(logging.ERROR)
@@ -49,7 +63,7 @@ def setup_logging(app_name: str = "hqevoai"):
 
     # 4. 审计日志文件（INFO+，永久保留）
     audit_file = LOG_DIR / f"{app_name}_audit.log"
-    audit_handler = logging.handlers.TimedRotatingFileHandler(
+    audit_handler = SafeTimedRotatingFileHandler(
         audit_file, when="midnight", interval=1, backupCount=365, encoding="utf-8"
     )
     audit_handler.setLevel(logging.INFO)

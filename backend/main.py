@@ -166,6 +166,22 @@ from routers.exam import router as exam_router
 app.include_router(exam_router, prefix="/api")
 from routers.position_capability import router as position_capability_router
 app.include_router(position_capability_router, prefix="/api")
+from routers.flywheel_gap import router as flywheel_gap_router
+app.include_router(flywheel_gap_router, prefix="/api")
+from routers.flywheel_metrics import router as flywheel_metrics_router
+app.include_router(flywheel_metrics_router, prefix="/api")
+from routers.flywheel_prereview import router as flywheel_prereview_router
+app.include_router(flywheel_prereview_router, prefix="/api")
+from routers.flywheel_expiry import router as flywheel_expiry_router
+app.include_router(flywheel_expiry_router, prefix="/api")
+from routers.flywheel_sales import router as flywheel_sales_router
+app.include_router(flywheel_sales_router, prefix="/api")
+from routers.flywheel_repair import router as flywheel_repair_router
+app.include_router(flywheel_repair_router, prefix="/api")
+from routers.flywheel_service import router as flywheel_service_router
+app.include_router(flywheel_service_router, prefix="/api")
+from routers.flywheel_crossline import router as flywheel_crossline_router
+app.include_router(flywheel_crossline_router, prefix="/api")
 
 # 生产环境：挂载前端静态文件（必须在所有 API 路由之后）
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

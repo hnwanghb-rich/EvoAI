@@ -63,7 +63,7 @@ onMounted(fetchData)
       </div>
 
       <div class="card" style="margin-bottom:16px">
-        <h3 style="font-size:14px;margin:0 0 10px">📝 考试记录（{{ examHistory.length }} 次）</h3>
+        <h3 style="font-size:14px;margin:0 0 10px">☐ 考试记录（{{ examHistory.length }} 次）</h3>
         <div v-if="examHistory.length === 0" class="empty-hint">暂无考试记录</div>
         <div v-else class="scroll-wrap">
           <table class="lc-table"><thead><tr><th>试卷</th><th>得分</th><th>正确</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
@@ -72,9 +72,9 @@ onMounted(fetchData)
                 <td>{{ e.paper_title }}</td>
                 <td><b :style="{ color: e.score >= 60 ? 'var(--success)' : 'var(--danger)' }">{{ e.score }} 分</b></td>
                 <td>{{ e.correct_count }}/{{ e.total_questions }}</td>
-                <td>{{ e.status === 'submitted' ? '✅ 已交卷' : '⏳ 进行中' }}</td>
+                <td>{{ e.status === 'submitted' ? '✓ 已交卷' : '◷ 进行中' }}</td>
                 <td style="font-size:11px;color:var(--text-sub)">{{ (e.submitted_at || e.started_at || '').slice(0, 16) }}</td>
-                <td><button v-if="e.status === 'submitted'" class="btn btn-sm btn-outline" @click="viewExamDetail(e.id)">👁 详情</button></td>
+                <td><button v-if="e.status === 'submitted'" class="btn btn-sm btn-outline" @click="viewExamDetail(e.id)">◁ 详情</button></td>
               </tr>
             </tbody>
           </table>
@@ -82,11 +82,11 @@ onMounted(fetchData)
       </div>
 
       <div class="card">
-        <h3 style="font-size:14px;margin:0 0 10px">❓ 每次一题汇总（{{ dqTotal }} 题）</h3>
+        <h3 style="font-size:14px;margin:0 0 10px">◇ 每次一题汇总（{{ dqTotal }} 题）</h3>
         <div v-if="!dqStats.length" class="empty-hint">暂无答题记录</div>
         <div v-else class="dq-summary-grid">
           <div v-for="s in dqStats" :key="s.category_id" class="dq-summary-card">
-            <div class="dqs-icon">{{ s.icon || '📄' }}</div>
+            <div class="dqs-icon">{{ s.icon || '◈' }}</div>
             <div class="dqs-info">
               <div class="dqs-name">{{ s.category_name }}</div>
               <div class="dqs-bar-wrap">
@@ -105,7 +105,7 @@ onMounted(fetchData)
     <Teleport to="body">
       <div v-if="showExamDetail && examDetail" class="modal-overlay" @click.self="closeDetail">
         <div class="modal-panel-big">
-          <div class="modal-header"><h3>📝 考试详情</h3><button @click="closeDetail" class="btn btn-sm">×</button></div>
+          <div class="modal-header"><h3>☐ 考试详情</h3><button @click="closeDetail" class="btn btn-sm">×</button></div>
           <div class="modal-body">
             <div class="det-sum"><span class="ds-num">{{ examDetail.score }}</span><span class="ds-unit">分</span><span style="margin-left:16px;font-size:13px;color:var(--text-sub)">答对 {{ examDetail.correct_count }}/{{ examDetail.total_questions }} 题（{{ Math.round(examDetail.correct_count / examDetail.total_questions * 100) }}%）</span></div>
             <div class="det-qs">
@@ -116,7 +116,7 @@ onMounted(fetchData)
                   <span v-for="(v, k) in q.options" :key="k" class="dq-o" :class="{ 'dq-o-ok': k === q.answer, 'dq-o-bad': k === q.user_answer && k !== q.answer }">{{ k }}. {{ v }}</span>
                 </div>
                 <div class="dq-ans">你的答案：<b :style="{ color: q.is_correct ? 'var(--success)' : 'var(--danger)' }">{{ q.user_answer || '(未作答)' }}</b> <template v-if="!q.is_correct">| 正确答案：<b style="color:var(--success)">{{ q.answer }}</b></template></div>
-                <div v-if="q.explanation" class="dq-exp">💡 {{ q.explanation }}</div>
+                <div v-if="q.explanation" class="dq-exp">◆ {{ q.explanation }}</div>
               </div>
             </div>
           </div>
